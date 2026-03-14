@@ -26,12 +26,15 @@
     --button-secondary-bg: #21314d;
     --button-secondary-border: #344769;
     --input-bg: #0f1930;
+    --focus-ring: #4f8cff;
     --table-bg: #0e172b;
     --table-head-bg: #13203b;
     --table-row-border: #1f2d49;
     --table-row-hover-bg: #111d35;
     --table-head-text: #d7e2f8;
     --table-cell-text: #c7d4ee;
+    --log-border: #213457;
+    --log-text: #d6e0f8;
     --player-box-bg: #0f1930;
     --player-box-border: #23365a;
     --player-box-hover-bg: #162642;
@@ -330,7 +333,7 @@ select:focus,
 button:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.35);
+    box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 button {
@@ -430,9 +433,9 @@ button.secondary {
 
 .log-rectangle {
     background: var(--log-bg);
-    color: #d6e0f8;
+    color: var(--log-text);
     margin: 0;
-    border: 1px solid #213457;
+    border: 1px solid var(--log-border);
     border-radius: 8px;
     padding: 12px;
     white-space: pre-wrap;

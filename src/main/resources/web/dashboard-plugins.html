@@ -28,7 +28,12 @@
         <h1>Plugins</h1>
         <p>Installed server plugins: <span id="pluginCount">0</span></p>
 
-        <section class="card spaced-top">
+        <div class="tabs">
+            <button id="tabInstalled" class="tab-link active" type="button">Installed</button>
+            <button id="tabInstall" class="tab-link" type="button">Install</button>
+        </div>
+
+        <section id="installedSection" class="card spaced-top">
             <h2>Installed Plugins</h2>
             <div class="table-wrap">
                 <table>
@@ -45,10 +50,42 @@
                 </table>
             </div>
         </section>
+
+        <section id="installSection" class="card spaced-top" style="display:none;">
+            <h2>Install From Marketplace</h2>
+            <p>Search results are filtered to Paper-compatible plugins.</p>
+            <div class="marketplace-search-row">
+                <select id="marketSource">
+                    <option value="modrinth">Modrinth</option>
+                    <option value="curseforge">CurseForge</option>
+                    <option value="hangar">Hangar</option>
+                </select>
+                <input id="marketQuery" placeholder="Search Paper plugin name">
+                <button id="searchMarketplace" class="secondary" type="button">Search</button>
+            </div>
+
+            <div class="table-wrap spaced-top">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Author</th>
+                        <th>Description</th>
+                        <th>Versions</th>
+                        <th>Install</th>
+                    </tr>
+                    </thead>
+                    <tbody id="marketResults"></tbody>
+                </table>
+            </div>
+            <p id="marketStatus" class="action-status"></p>
+        </section>
     </main>
 </div>
 
 <script>
+    const projectVersions = new Map();
+
     async function api(url, options) {
         const res = await fetch(url, options);
         const data = await res.json();
@@ -109,6 +146,161 @@
             tbody.appendChild(renderPluginRow(plugin));
         });
     }
+
+    function setTab(installedVisible) {
+        document.getElementById('installedSection').style.display = installedVisible ? 'block' : 'none';
+        document.getElementById('installSection').style.display = installedVisible ? 'none' : 'block';
+        document.getElementById('tabInstalled').classList.toggle('active', installedVisible);
+        document.getElementById('tabInstall').classList.toggle('active', !installedVisible);
+    }
+
+    function setMarketStatus(message, isError) {
+        const status = document.getElementById('marketStatus');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    async function fetchVersionsForProject(source, projectId) {
+        const key = `${source}:${projectId}`;
+        if (projectVersions.has(key)) {
+            return projectVersions.get(key);
+        }
+
+        const data = await api(`/api/plugin-marketplace/versions?source=${encodeURIComponent(source)}&projectId=${encodeURIComponent(projectId)}`);
+        const versions = Array.isArray(data.versions) ? data.versions : [];
+        projectVersions.set(key, versions);
+        return versions;
+    }
+
+    function createMarketRow(source, project) {
+        const tr = document.createElement('tr');
+
+        const nameTd = document.createElement('td');
+        nameTd.textContent = project.name || 'Unknown';
+        tr.appendChild(nameTd);
+
+        const authorTd = document.createElement('td');
+        authorTd.textContent = project.author || '-';
+        tr.appendChild(authorTd);
+
+        const descTd = document.createElement('td');
+        descTd.textContent = project.description || '-';
+        tr.appendChild(descTd);
+
+        const versionsTd = document.createElement('td');
+        const versionSelect = document.createElement('select');
+        versionSelect.disabled = true;
+        versionsTd.appendChild(versionSelect);
+        tr.appendChild(versionsTd);
+
+        const installTd = document.createElement('td');
+        const installBtn = document.createElement('button');
+        installBtn.textContent = 'Install';
+        installBtn.disabled = true;
+        installTd.appendChild(installBtn);
+        tr.appendChild(installTd);
+
+        (async () => {
+            try {
+                const versions = await fetchVersionsForProject(source, project.projectId);
+                versionSelect.innerHTML = '';
+                if (versions.length === 0) {
+                    const option = document.createElement('option');
+                    option.textContent = 'No versions';
+                    versionSelect.appendChild(option);
+                    return;
+                }
+
+                versions.forEach(version => {
+                    const option = document.createElement('option');
+                    option.value = version.versionId;
+                    option.textContent = version.name || version.versionId;
+                    versionSelect.appendChild(option);
+                });
+                versionSelect.disabled = false;
+                installBtn.disabled = false;
+            } catch (error) {
+                setMarketStatus(`Failed to load versions for ${project.name}: ${error.message}`, true);
+            }
+        })();
+
+        installBtn.addEventListener('click', async () => {
+            if (!versionSelect.value) {
+                return;
+            }
+
+            try {
+                installBtn.disabled = true;
+                const result = await api('/api/plugin-marketplace/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source,
+                        projectId: project.projectId,
+                        versionId: versionSelect.value
+                    })
+                });
+                setMarketStatus(`Installed ${result.fileName}. Restart required to load the plugin.`, false);
+                await loadPlugins();
+            } catch (error) {
+                setMarketStatus(`Install failed: ${error.message}`, true);
+            } finally {
+                installBtn.disabled = false;
+            }
+        });
+
+        return tr;
+    }
+
+    async function searchMarketplace() {
+        const source = document.getElementById('marketSource').value;
+        const query = document.getElementById('marketQuery').value.trim();
+        if (!query) {
+            setMarketStatus('Enter a search term first', true);
+            return;
+        }
+
+        const data = await api(`/api/plugin-marketplace/search?source=${encodeURIComponent(source)}&query=${encodeURIComponent(query)}`);
+        const results = Array.isArray(data.results) ? data.results : [];
+        const tbody = document.getElementById('marketResults');
+        tbody.innerHTML = '';
+
+        if (results.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 5;
+            cell.textContent = 'No marketplace results found';
+            row.appendChild(cell);
+            tbody.appendChild(row);
+            setMarketStatus('', false);
+            return;
+        }
+
+        results.forEach(project => {
+            tbody.appendChild(createMarketRow(source, project));
+        });
+        setMarketStatus(`Found ${results.length} result(s) in ${source}.`, false);
+    }
+
+    document.getElementById('tabInstalled').addEventListener('click', () => setTab(true));
+    document.getElementById('tabInstall').addEventListener('click', () => setTab(false));
+    document.getElementById('searchMarketplace').addEventListener('click', async () => {
+        try {
+            await searchMarketplace();
+        } catch (error) {
+            setMarketStatus(`Search failed: ${error.message}`, true);
+        }
+    });
+    document.getElementById('marketQuery').addEventListener('keydown', async event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            try {
+                await searchMarketplace();
+            } catch (error) {
+                setMarketStatus(`Search failed: ${error.message}`, true);
+            }
+        }
+    });
 
     document.getElementById('logout').addEventListener('click', async () => {
         await api('/api/logout', { method: 'POST' });

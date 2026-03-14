@@ -1,6 +1,9 @@
 package de.winniepat.minePanel.web;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import de.winniepat.minePanel.MinePanel;
 import de.winniepat.minePanel.auth.PasswordHasher;
 import de.winniepat.minePanel.auth.SessionService;
@@ -22,14 +25,26 @@ import de.winniepat.minePanel.users.UserRole;
 import org.bukkit.BanList;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitTask;
 import spark.Request;
 import spark.Response;
 
+import java.net.URLEncoder;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +69,9 @@ import static spark.Spark.post;
 public final class WebPanelServer {
 
     private static final String SESSION_COOKIE = "PANEL_SESSION";
+    private static final List<String> PAPER_PLUGIN_LOADERS = List.of("paper", "spigot", "bukkit", "purpur", "folia");
+    private static final long OVERVIEW_WINDOW_MILLIS = 60L * 60L * 1000L;
+    private static final long OVERVIEW_SAMPLE_INTERVAL_TICKS = 20L * 5L;
     private final long serverStartedAtMillis = System.currentTimeMillis();
 
     private final MinePanel plugin;
@@ -68,6 +86,9 @@ public final class WebPanelServer {
     private final ServerLogService serverLogService;
     private final BootstrapService bootstrapService;
     private final Gson gson = new Gson();
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final Deque<MetricSample> overviewSamples = new ArrayDeque<>();
+    private BukkitTask overviewSamplerTask;
 
     public WebPanelServer(
             MinePanel plugin,
@@ -206,6 +227,10 @@ public final class WebPanelServer {
             get("/plugins", (request, response) -> handlePlugins(request, response));
             get("/uptime", (request, response) -> handleUptime(request, response));
             get("/health", (request, response) -> handleHealth(request, response));
+            get("/overview/metrics", (request, response) -> handleOverviewMetrics(request, response));
+            get("/plugin-marketplace/search", (request, response) -> handlePluginMarketplaceSearch(request, response));
+            get("/plugin-marketplace/versions", (request, response) -> handlePluginMarketplaceVersions(request, response));
+            post("/plugin-marketplace/install", (request, response) -> handlePluginMarketplaceInstall(request, response));
             post("/players/:uuid/kick", (request, response) -> handleKickPlayer(request, response));
             post("/players/:uuid/temp-ban", (request, response) -> handleTempBanPlayer(request, response));
             post("/players/ban", (request, response) -> handleBanPlayer(request, response));
@@ -215,12 +240,119 @@ public final class WebPanelServer {
             post("/integrations/discord-webhook", (request, response) -> handleSaveDiscordWebhook(request, response));
         });
 
+        startOverviewSampler();
         awaitInitialization();
     }
 
     public void stop() {
+        stopOverviewSampler();
         spark.Spark.stop();
         awaitStop();
+    }
+
+    private void startOverviewSampler() {
+        if (overviewSamplerTask != null) {
+            overviewSamplerTask.cancel();
+        }
+
+        // Capture one sample immediately, then continue in a fixed cadence.
+        synchronized (overviewSamples) {
+            captureOverviewSample();
+        }
+        overviewSamplerTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            synchronized (overviewSamples) {
+                captureOverviewSample();
+            }
+        }, OVERVIEW_SAMPLE_INTERVAL_TICKS, OVERVIEW_SAMPLE_INTERVAL_TICKS);
+    }
+
+    private void stopOverviewSampler() {
+        if (overviewSamplerTask != null) {
+            overviewSamplerTask.cancel();
+            overviewSamplerTask = null;
+        }
+    }
+
+    private void captureOverviewSample() {
+        long now = System.currentTimeMillis();
+        Runtime runtime = Runtime.getRuntime();
+        long totalMemoryBytes = runtime.totalMemory();
+        long usedMemoryBytes = totalMemoryBytes - runtime.freeMemory();
+        long maxMemoryBytes = runtime.maxMemory();
+
+        double memoryUsedMb = usedMemoryBytes / (1024.0 * 1024.0);
+        double memoryPercent = maxMemoryBytes > 0 ? (usedMemoryBytes * 100.0 / maxMemoryBytes) : 0.0;
+        double cpuPercent = readProcessCpuPercent();
+        double tps = readPrimaryTps();
+
+        overviewSamples.addLast(new MetricSample(now, tps, memoryPercent, memoryUsedMb, cpuPercent));
+
+        long cutoff = now - OVERVIEW_WINDOW_MILLIS;
+        while (!overviewSamples.isEmpty() && overviewSamples.peekFirst().timestampMillis() < cutoff) {
+            overviewSamples.removeFirst();
+        }
+    }
+
+    private double readPrimaryTps() {
+        try {
+            Object result = plugin.getServer().getClass().getMethod("getTPS").invoke(plugin.getServer());
+            if (result instanceof double[] values && values.length > 0) {
+                return values[0];
+            }
+        } catch (Exception ignored) {
+            // On unsupported server implementations, TPS remains unavailable.
+        }
+        return -1.0;
+    }
+
+    private double readProcessCpuPercent() {
+        java.lang.management.OperatingSystemMXBean mxBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+        if (mxBean instanceof com.sun.management.OperatingSystemMXBean sunBean) {
+            double load = sunBean.getProcessCpuLoad();
+            if (load >= 0) {
+                return load * 100.0;
+            }
+        }
+        return -1.0;
+    }
+
+    private String handleOverviewMetrics(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+
+        List<Map<String, Object>> tpsHistory = new ArrayList<>();
+        List<Map<String, Object>> memoryHistory = new ArrayList<>();
+        List<Map<String, Object>> cpuHistory = new ArrayList<>();
+        MetricSample latest;
+
+        synchronized (overviewSamples) {
+            if (overviewSamples.isEmpty()) {
+                captureOverviewSample();
+            }
+
+            latest = overviewSamples.peekLast();
+            for (MetricSample sample : overviewSamples) {
+                tpsHistory.add(Map.of("timestamp", sample.timestampMillis(), "value", sample.tps()));
+                memoryHistory.add(Map.of("timestamp", sample.timestampMillis(), "value", sample.memoryPercent()));
+                cpuHistory.add(Map.of("timestamp", sample.timestampMillis(), "value", sample.cpuPercent()));
+            }
+        }
+
+        Map<String, Object> current = new HashMap<>();
+        current.put("tps", latest == null ? -1.0 : latest.tps());
+        current.put("memoryPercent", latest == null ? 0.0 : latest.memoryPercent());
+        current.put("memoryUsedMb", latest == null ? 0.0 : latest.memoryUsedMb());
+        current.put("cpuPercent", latest == null ? -1.0 : latest.cpuPercent());
+
+        Map<String, Object> history = new HashMap<>();
+        history.put("tps", tpsHistory);
+        history.put("memory", memoryHistory);
+        history.put("cpu", cpuHistory);
+
+        return json(response, 200, Map.of(
+                "current", current,
+                "history", history,
+                "windowMinutes", 60
+        ));
     }
 
     private String handleBootstrap(Request request, Response response) {
@@ -450,6 +582,106 @@ public final class WebPanelServer {
                 "count", plugins.size(),
                 "plugins", plugins
         ));
+    }
+
+    private String handlePluginMarketplaceSearch(Request request, Response response) {
+        requireUser(request, PanelPermission.MANAGE_USERS);
+
+        String source = normalizeMarketplaceSource(request.queryParams("source"));
+        String query = request.queryParams("query");
+        if (isBlank(query)) {
+            return json(response, 400, Map.of("error", "query_required"));
+        }
+
+        List<Map<String, Object>> projects = switch (source) {
+            case "modrinth" -> searchModrinthProjects(query);
+            case "curseforge" -> searchCurseForgeProjects(query);
+            case "hangar" -> searchHangarProjects(query);
+            default -> List.of();
+        };
+
+        return json(response, 200, Map.of(
+                "source", source,
+                "results", projects
+        ));
+    }
+
+    private String handlePluginMarketplaceVersions(Request request, Response response) {
+        requireUser(request, PanelPermission.MANAGE_USERS);
+
+        String source = normalizeMarketplaceSource(request.queryParams("source"));
+        String projectId = request.queryParams("projectId");
+        if (isBlank(projectId)) {
+            return json(response, 400, Map.of("error", "project_id_required"));
+        }
+
+        List<Map<String, Object>> versions = switch (source) {
+            case "modrinth" -> listModrinthVersions(projectId);
+            case "curseforge" -> listCurseForgeFiles(projectId);
+            case "hangar" -> listHangarVersions(projectId);
+            default -> List.of();
+        };
+
+        return json(response, 200, Map.of(
+                "source", source,
+                "projectId", projectId,
+                "versions", versions
+        ));
+    }
+
+    private String handlePluginMarketplaceInstall(Request request, Response response) {
+        PanelUser user = requireUser(request, PanelPermission.MANAGE_USERS);
+
+        PluginInstallPayload payload = gson.fromJson(request.body(), PluginInstallPayload.class);
+        if (payload == null || isBlank(payload.source()) || isBlank(payload.projectId()) || isBlank(payload.versionId())) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        String source = normalizeMarketplaceSource(payload.source());
+        MarketplaceDownload download;
+        try {
+            download = switch (source) {
+                case "modrinth" -> resolveModrinthDownload(payload.versionId());
+                case "curseforge" -> resolveCurseForgeDownload(payload.projectId(), payload.versionId());
+                case "hangar" -> resolveHangarDownload(payload.projectId(), payload.versionId());
+                default -> null;
+            };
+        } catch (Exception exception) {
+            return json(response, 500, Map.of("error", "marketplace_lookup_failed", "details", exception.getMessage()));
+        }
+
+        if (download == null || isBlank(download.downloadUrl()) || isBlank(download.fileName())) {
+            return json(response, 404, Map.of("error", "download_not_found"));
+        }
+
+        try {
+            Path pluginsDirectory = getPluginsDirectory();
+            Files.createDirectories(pluginsDirectory);
+
+            String safeFileName = sanitizePluginFileName(download.fileName());
+            Path targetFile = pluginsDirectory.resolve(safeFileName).normalize();
+            if (!targetFile.startsWith(pluginsDirectory)) {
+                return json(response, 400, Map.of("error", "invalid_file_name"));
+            }
+
+            HttpRequest requestDownload = HttpRequest.newBuilder(URI.create(download.downloadUrl())).GET().build();
+            HttpResponse<byte[]> downloadResponse = httpClient.send(requestDownload, HttpResponse.BodyHandlers.ofByteArray());
+            if (downloadResponse.statusCode() >= 300) {
+                return json(response, 502, Map.of("error", "download_failed", "status", downloadResponse.statusCode()));
+            }
+
+            Files.write(targetFile, downloadResponse.body(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            panelLogger.log("AUDIT", user.username(), "Installed plugin file " + safeFileName + " from " + source + " marketplace");
+
+            return json(response, 200, Map.of(
+                    "ok", true,
+                    "fileName", safeFileName,
+                    "path", targetFile.toAbsolutePath().toString(),
+                    "requiresRestart", true
+            ));
+        } catch (Exception exception) {
+            return json(response, 500, Map.of("error", "install_failed", "details", exception.getMessage()));
+        }
     }
 
     private String handleUptime(Request request, Response response) {
@@ -876,6 +1108,409 @@ public final class WebPanelServer {
         }
     }
 
+    private String normalizeMarketplaceSource(String source) {
+        if (source == null) {
+            return "modrinth";
+        }
+
+        String normalized = source.trim().toLowerCase();
+        return switch (normalized) {
+            case "modrinth", "curseforge", "hangar" -> normalized;
+            default -> "modrinth";
+        };
+    }
+
+    private List<Map<String, Object>> searchModrinthProjects(String query) {
+        String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
+        String encodedFacets = URLEncoder.encode(
+                "[[\"project_type:plugin\"],[\"categories:paper\",\"categories:spigot\",\"categories:bukkit\",\"categories:purpur\",\"categories:folia\"]]",
+                StandardCharsets.UTF_8
+        );
+        JsonObject root = requestJson("https://api.modrinth.com/v2/search?query=" + encodedQuery + "&limit=20&facets=" + encodedFacets);
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        JsonArray hits = root.getAsJsonArray("hits");
+        if (hits == null) {
+            return results;
+        }
+
+        for (JsonElement element : hits) {
+            JsonObject hit = element.getAsJsonObject();
+            JsonArray categories = hit.getAsJsonArray("categories");
+            JsonArray displayCategories = hit.getAsJsonArray("display_categories");
+            if (!containsAnyIgnoreCase(categories, PAPER_PLUGIN_LOADERS)
+                    && !containsAnyIgnoreCase(displayCategories, PAPER_PLUGIN_LOADERS)) {
+                continue;
+            }
+
+            Map<String, Object> row = new HashMap<>();
+            row.put("projectId", stringValue(hit, "project_id"));
+            row.put("name", stringValue(hit, "title"));
+            row.put("description", stringValue(hit, "description"));
+            row.put("author", stringValue(hit, "author"));
+            row.put("iconUrl", stringValue(hit, "icon_url"));
+            row.put("source", "modrinth");
+            results.add(row);
+        }
+        return results;
+    }
+
+    private List<Map<String, Object>> listModrinthVersions(String projectId) {
+        String encodedProject = URLEncoder.encode(projectId, StandardCharsets.UTF_8);
+        JsonArray versions = requestJsonArray("https://api.modrinth.com/v2/project/" + encodedProject + "/version");
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (JsonElement element : versions) {
+            JsonObject version = element.getAsJsonObject();
+            JsonArray loaders = version.getAsJsonArray("loaders");
+            if (!containsAnyIgnoreCase(loaders, PAPER_PLUGIN_LOADERS)) {
+                continue;
+            }
+
+            JsonArray files = version.getAsJsonArray("files");
+            if (files == null || files.isEmpty()) {
+                continue;
+            }
+
+            JsonObject selectedFile = pickModrinthPrimaryFile(files);
+            if (selectedFile == null) {
+                continue;
+            }
+
+            Map<String, Object> row = new HashMap<>();
+            row.put("versionId", stringValue(version, "id"));
+            row.put("name", firstNonBlank(stringValue(version, "name"), stringValue(version, "version_number"), "Version"));
+            row.put("gameVersions", listStringValues(version.getAsJsonArray("game_versions")));
+            row.put("fileName", stringValue(selectedFile, "filename"));
+            row.put("source", "modrinth");
+            result.add(row);
+        }
+        return result;
+    }
+
+    private MarketplaceDownload resolveModrinthDownload(String versionId) {
+        String encodedVersion = URLEncoder.encode(versionId, StandardCharsets.UTF_8);
+        JsonObject version = requestJson("https://api.modrinth.com/v2/version/" + encodedVersion);
+        JsonObject selectedFile = pickModrinthPrimaryFile(version.getAsJsonArray("files"));
+        if (selectedFile == null) {
+            return null;
+        }
+
+        return new MarketplaceDownload(
+                stringValue(selectedFile, "url"),
+                stringValue(selectedFile, "filename")
+        );
+    }
+
+    private JsonObject pickModrinthPrimaryFile(JsonArray files) {
+        if (files == null || files.isEmpty()) {
+            return null;
+        }
+
+        for (JsonElement element : files) {
+            JsonObject file = element.getAsJsonObject();
+            String filename = stringValue(file, "filename");
+            if (file.has("primary") && file.get("primary").getAsBoolean() && filename.endsWith(".jar")) {
+                return file;
+            }
+        }
+        for (JsonElement element : files) {
+            JsonObject file = element.getAsJsonObject();
+            if (stringValue(file, "filename").endsWith(".jar")) {
+                return file;
+            }
+        }
+        return files.get(0).getAsJsonObject();
+    }
+
+    private boolean containsAnyIgnoreCase(JsonArray array, List<String> expectedValues) {
+        if (array == null || expectedValues == null || expectedValues.isEmpty()) {
+            return false;
+        }
+
+        for (JsonElement element : array) {
+            if (element == null || element.isJsonNull()) {
+                continue;
+            }
+            String value = element.getAsString();
+            if (value == null) {
+                continue;
+            }
+            String lowered = value.toLowerCase();
+            for (String expected : expectedValues) {
+                if (lowered.equals(expected)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<Map<String, Object>> searchCurseForgeProjects(String query) {
+        String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
+        JsonObject root = requestJson("https://api.curse.tools/v1/cf/mods/search?gameId=432&classId=5&pageSize=20&searchFilter=" + encodedQuery);
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        JsonArray data = root.getAsJsonArray("data");
+        if (data == null) {
+            return results;
+        }
+
+        for (JsonElement element : data) {
+            JsonObject mod = element.getAsJsonObject();
+            Map<String, Object> row = new HashMap<>();
+            row.put("projectId", stringValue(mod, "id"));
+            row.put("name", stringValue(mod, "name"));
+            row.put("description", stringValue(mod, "summary"));
+            row.put("author", firstAuthorName(mod));
+            row.put("iconUrl", nestedStringValue(mod, "logo", "thumbnailUrl"));
+            row.put("source", "curseforge");
+            results.add(row);
+        }
+        return results;
+    }
+
+    private List<Map<String, Object>> listCurseForgeFiles(String projectId) {
+        String encodedProject = URLEncoder.encode(projectId, StandardCharsets.UTF_8);
+        JsonObject root = requestJson("https://api.curse.tools/v1/cf/mods/" + encodedProject + "/files?pageSize=25");
+        JsonArray files = root.getAsJsonArray("data");
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (files == null) {
+            return result;
+        }
+
+        for (JsonElement element : files) {
+            JsonObject file = element.getAsJsonObject();
+            if (file.has("isAvailable") && !file.get("isAvailable").getAsBoolean()) {
+                continue;
+            }
+
+            Map<String, Object> row = new HashMap<>();
+            row.put("versionId", stringValue(file, "id"));
+            row.put("name", firstNonBlank(stringValue(file, "displayName"), stringValue(file, "fileName"), "File"));
+            row.put("gameVersions", listStringValues(file.getAsJsonArray("gameVersions")));
+            row.put("fileName", stringValue(file, "fileName"));
+            row.put("source", "curseforge");
+            result.add(row);
+        }
+        return result;
+    }
+
+    private MarketplaceDownload resolveCurseForgeDownload(String projectId, String versionId) {
+        String encodedProject = URLEncoder.encode(projectId, StandardCharsets.UTF_8);
+        String encodedVersion = URLEncoder.encode(versionId, StandardCharsets.UTF_8);
+        JsonObject file = requestJson("https://api.curse.tools/v1/cf/mods/" + encodedProject + "/files/" + encodedVersion);
+        JsonObject data = file.getAsJsonObject("data");
+        if (data == null) {
+            data = file;
+        }
+
+        return new MarketplaceDownload(
+                stringValue(data, "downloadUrl"),
+                stringValue(data, "fileName")
+        );
+    }
+
+    private List<Map<String, Object>> searchHangarProjects(String query) {
+        String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
+        JsonObject root = requestJson("https://hangar.papermc.io/api/v1/projects?query=" + encodedQuery + "&limit=20");
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        JsonArray data = root.getAsJsonArray("result");
+        if (data == null) {
+            return results;
+        }
+
+        for (JsonElement element : data) {
+            JsonObject project = element.getAsJsonObject();
+            JsonObject namespace = project.getAsJsonObject("namespace");
+            if (namespace == null) {
+                continue;
+            }
+
+            String owner = stringValue(namespace, "owner");
+            String slug = stringValue(namespace, "slug");
+            if (isBlank(owner) || isBlank(slug)) {
+                continue;
+            }
+
+            Map<String, Object> row = new HashMap<>();
+            row.put("projectId", owner + "/" + slug);
+            row.put("name", stringValue(project, "name"));
+            row.put("description", stringValue(project, "description"));
+            row.put("author", owner);
+            row.put("iconUrl", stringValue(project, "avatarUrl"));
+            row.put("source", "hangar");
+            results.add(row);
+        }
+        return results;
+    }
+
+    private List<Map<String, Object>> listHangarVersions(String projectId) {
+        String[] parts = splitHangarProject(projectId);
+        if (parts == null) {
+            return List.of();
+        }
+
+        String encodedOwner = URLEncoder.encode(parts[0], StandardCharsets.UTF_8);
+        String encodedSlug = URLEncoder.encode(parts[1], StandardCharsets.UTF_8);
+        JsonObject root = requestJson("https://hangar.papermc.io/api/v1/projects/" + encodedOwner + "/" + encodedSlug + "/versions?limit=30");
+        JsonArray versions = root.getAsJsonArray("result");
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (versions == null) {
+            return result;
+        }
+
+        for (JsonElement element : versions) {
+            JsonObject version = element.getAsJsonObject();
+            JsonObject downloads = version.getAsJsonObject("downloads");
+            if (downloads == null || !downloads.has("PAPER")) {
+                continue;
+            }
+
+            JsonObject paper = downloads.getAsJsonObject("PAPER");
+            JsonObject fileInfo = paper.getAsJsonObject("fileInfo");
+            JsonObject platformDependencies = version.getAsJsonObject("platformDependencies");
+            JsonArray paperVersions = platformDependencies == null ? null : platformDependencies.getAsJsonArray("PAPER");
+
+            Map<String, Object> row = new HashMap<>();
+            row.put("versionId", stringValue(version, "name"));
+            row.put("name", stringValue(version, "name"));
+            row.put("gameVersions", listStringValues(paperVersions));
+            row.put("fileName", fileInfo == null ? "" : stringValue(fileInfo, "name"));
+            row.put("source", "hangar");
+            result.add(row);
+        }
+        return result;
+    }
+
+    private MarketplaceDownload resolveHangarDownload(String projectId, String versionName) {
+        String[] parts = splitHangarProject(projectId);
+        if (parts == null) {
+            return null;
+        }
+
+        String encodedOwner = URLEncoder.encode(parts[0], StandardCharsets.UTF_8);
+        String encodedSlug = URLEncoder.encode(parts[1], StandardCharsets.UTF_8);
+        String encodedVersion = URLEncoder.encode(versionName, StandardCharsets.UTF_8);
+        JsonObject root = requestJson("https://hangar.papermc.io/api/v1/projects/" + encodedOwner + "/" + encodedSlug + "/versions/" + encodedVersion);
+        JsonObject downloads = root.getAsJsonObject("downloads");
+        if (downloads == null || !downloads.has("PAPER")) {
+            return null;
+        }
+
+        JsonObject paper = downloads.getAsJsonObject("PAPER");
+        JsonObject fileInfo = paper.getAsJsonObject("fileInfo");
+        return new MarketplaceDownload(
+                stringValue(paper, "downloadUrl"),
+                fileInfo == null ? "" : stringValue(fileInfo, "name")
+        );
+    }
+
+    private String[] splitHangarProject(String projectId) {
+        if (isBlank(projectId)) {
+            return null;
+        }
+
+        String[] parts = projectId.split("/");
+        if (parts.length != 2 || isBlank(parts[0]) || isBlank(parts[1])) {
+            return null;
+        }
+        return new String[]{parts[0], parts[1]};
+    }
+
+    private JsonObject requestJson(String url) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() >= 300) {
+                throw new IllegalStateException("Request failed with status " + response.statusCode());
+            }
+            return gson.fromJson(response.body(), JsonObject.class);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not query marketplace API", exception);
+        }
+    }
+
+    private JsonArray requestJsonArray(String url) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() >= 300) {
+                throw new IllegalStateException("Request failed with status " + response.statusCode());
+            }
+            return gson.fromJson(response.body(), JsonArray.class);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not query marketplace API", exception);
+        }
+    }
+
+    private Path getPluginsDirectory() {
+        Path pluginDataFolder = plugin.getDataFolder().toPath();
+        Path pluginsFolder = pluginDataFolder.getParent();
+        if (pluginsFolder != null) {
+            return pluginsFolder;
+        }
+        return pluginDataFolder.resolve("plugins");
+    }
+
+    private String sanitizePluginFileName(String fileName) {
+        String raw = fileName == null ? "plugin.jar" : fileName;
+        String cleaned = raw.replace("\\", "").replace("/", "").trim();
+        if (cleaned.isEmpty()) {
+            return "plugin.jar";
+        }
+        return cleaned;
+    }
+
+    private List<String> listStringValues(JsonArray array) {
+        List<String> values = new ArrayList<>();
+        if (array == null) {
+            return values;
+        }
+        for (JsonElement element : array) {
+            if (element != null && !element.isJsonNull()) {
+                values.add(element.getAsString());
+            }
+        }
+        return values;
+    }
+
+    private String firstAuthorName(JsonObject mod) {
+        JsonArray authors = mod.getAsJsonArray("authors");
+        if (authors == null || authors.isEmpty()) {
+            return "";
+        }
+        JsonObject first = authors.get(0).getAsJsonObject();
+        return stringValue(first, "name");
+    }
+
+    private String stringValue(JsonObject object, String key) {
+        if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
+            return "";
+        }
+        return object.get(key).getAsString();
+    }
+
+    private String nestedStringValue(JsonObject object, String parentKey, String key) {
+        if (object == null || !object.has(parentKey) || object.get(parentKey).isJsonNull()) {
+            return "";
+        }
+        JsonObject parent = object.getAsJsonObject(parentKey);
+        return stringValue(parent, key);
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
     private Map<String, Object> toWebhookPayload(DiscordWebhookConfig config) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("enabled", config.enabled());
@@ -1044,6 +1679,12 @@ public final class WebPanelServer {
     ) {
     }
 
+    private record PluginInstallPayload(String source, String projectId, String versionId) {
+    }
+
+    private record MarketplaceDownload(String downloadUrl, String fileName) {
+    }
+
     private record PlayerActionResult(boolean success, String username, String error) {
     }
 
@@ -1054,6 +1695,9 @@ public final class WebPanelServer {
     }
 
     private record BanStatus(Long expiresAtMillis) {
+    }
+
+    private record MetricSample(long timestampMillis, double tps, double memoryPercent, double memoryUsedMb, double cpuPercent) {
     }
 }
 

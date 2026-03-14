@@ -25,49 +25,52 @@
     </aside>
 
     <main class="content-area">
-        <h1>Player Management</h1>
-        <p>Online players: <span id="playerCount">0</span></p>
+        <h1>Players</h1>
+        <p>All players that ever joined: <span id="playerCount">0</span></p>
 
-        <section class="card spaced-top">
-            <h2>Online Players</h2>
-            <ul id="onlinePlayersTop" class="player-list"></ul>
-        </section>
+        <section class="players-layout spaced-top">
+            <div class="card">
+                <div class="card-head">
+                    <h2>Player List</h2>
+                    <input id="playerSearch" class="player-search" placeholder="Search player">
+                </div>
+                <ul id="playerDirectory" class="player-directory"></ul>
+            </div>
 
-        <section class="card spaced-top">
-            <h2>Moderation Actions</h2>
-            <div class="player-actions-toolbar">
-                <input id="actionReason" placeholder="Reason (optional)">
-                <input id="banMinutes" type="number" min="1" max="43200" value="60" placeholder="Ban duration (minutes)">
-                <input id="targetUsername" placeholder="Username for offline ban/unban">
-                <button id="refreshPlayers" class="secondary">Refresh Players</button>
+            <div class="card profile-card">
+                <h2>Player Profile</h2>
+                <div id="profileEmpty" class="player-empty">Select a player from the list.</div>
+                <div id="profileContent" class="profile-pane" style="display:none;">
+                    <div class="profile-header">
+                        <img id="profileAvatar" class="profile-avatar" alt="Player skin face">
+                        <div>
+                            <div class="profile-name-row">
+                                <span id="profileName" class="profile-name"></span>
+                                <span id="profileStatusDot" class="status-dot"></span>
+                                <span id="profileStatusText" class="profile-status"></span>
+                            </div>
+                            <div id="profileUuid" class="profile-uuid"></div>
+                        </div>
+                    </div>
+
+                    <div class="profile-grid">
+                        <div class="profile-field"><span>First joined</span><strong id="profileFirstJoined">-</strong></div>
+                        <div class="profile-field"><span>Last seen</span><strong id="profileLastSeen">-</strong></div>
+                        <div class="profile-field"><span>Total playtime</span><strong id="profilePlaytime">-</strong></div>
+                        <div class="profile-field"><span>Total sessions</span><strong id="profileSessions">-</strong></div>
+                        <div class="profile-field"><span>IP Address</span><strong id="profileIp">-</strong></div>
+                        <div class="profile-field"><span>Country</span><strong id="profileCountry">-</strong></div>
+                    </div>
+                </div>
             </div>
-            <div class="player-actions spaced-top">
-                <button id="banByName" class="danger-button">Ban Username</button>
-                <button id="unbanByName" class="secondary">Unban Username</button>
-            </div>
-            <div class="table-wrap spaced-top">
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Player</th>
-                        <th>UUID</th>
-                        <th>Status</th>
-                        <th>Ban Expires</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="players"></tbody>
-                </table>
-            </div>
-            <p id="actionStatus" class="action-status"></p>
         </section>
     </main>
 </div>
 
 <script>
-    const onlineNodeCache = new Map();
-    const tableRowCache = new Map();
-    const avatarUrlCache = new Map();
+    let allPlayers = [];
+    let selectedUuid = null;
+    const avatarCache = new Map();
 
     async function api(url, options) {
         const res = await fetch(url, options);
@@ -76,338 +79,137 @@
         return data;
     }
 
-    function setStatus(message, isError) {
-        const status = document.getElementById('actionStatus');
-        status.textContent = message || '';
-        status.className = isError ? 'action-status error-text' : 'action-status success-text';
-    }
-
     async function loadMe() {
         const data = await api('/api/me');
         document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
     }
 
-    function applyAvatar(img, player) {
-        const key = player.uuid;
-        const cached = avatarUrlCache.get(key);
+    function formatDate(timestamp) {
+        if (!timestamp || Number(timestamp) <= 0) {
+            return '-';
+        }
+        return new Date(Number(timestamp)).toLocaleString();
+    }
+
+    function formatPlaytime(seconds) {
+        const safe = Math.max(0, Number(seconds) || 0);
+        const days = Math.floor(safe / 86400);
+        const hours = Math.floor((safe % 86400) / 3600);
+        const minutes = Math.floor((safe % 3600) / 60);
+        const sec = Math.floor(safe % 60);
+
+        const parts = [];
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0 || days > 0) parts.push(`${hours}h`);
+        if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+        parts.push(`${sec}s`);
+        return parts.join(' ');
+    }
+
+    function applyAvatar(img, uuid, username) {
+        const cached = avatarCache.get(uuid);
         if (cached) {
             img.src = cached;
             return;
         }
 
-        const primary = `https://crafatar.com/avatars/${player.uuid}?size=32&overlay`;
-        const fallback = `https://mc-heads.net/avatar/${encodeURIComponent(player.username)}/32`;
-        const placeholder = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="%23131f38"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="14" fill="%23a9bbdf">?</text></svg>';
-
-        img.dataset.avatarUuid = key;
-        img.dataset.avatarUsername = player.username;
-        img.onload = () => {
-            if (img.dataset.avatarUuid === key) {
-                avatarUrlCache.set(key, img.src);
-            }
-        };
+        img.referrerPolicy = 'no-referrer';
+        img.alt = `${username} skin face`;
+        img.src = `https://crafatar.com/avatars/${uuid}?size=48&overlay`;
         img.onerror = () => {
-            if (img.dataset.avatarUuid !== key) {
-                return;
-            }
             if (!img.dataset.fallbackTried) {
                 img.dataset.fallbackTried = '1';
-                img.src = fallback;
+                img.src = `https://mc-heads.net/avatar/${encodeURIComponent(username)}/48`;
                 return;
             }
             img.onerror = null;
-            img.src = placeholder;
-            avatarUrlCache.set(key, placeholder);
+            img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="%23131f38"/><text x="24" y="30" text-anchor="middle" font-family="Arial" font-size="18" fill="%23a9bbdf">?</text></svg>';
+            avatarCache.set(uuid, img.src);
         };
-        img.src = primary;
+        img.onload = () => {
+            avatarCache.set(uuid, img.src);
+        };
     }
 
-    function getOrCreateOnlineItem(player) {
-        const key = player.uuid;
-        let item = onlineNodeCache.get(key);
-        if (!item) {
-            item = document.createElement('li');
-            item.className = 'player-item';
-
-            const avatar = document.createElement('img');
-            avatar.className = 'player-avatar';
-            avatar.referrerPolicy = 'no-referrer';
-
-            const name = document.createElement('span');
-            name.className = 'player-name';
-
-            item.appendChild(avatar);
-            item.appendChild(name);
-            onlineNodeCache.set(key, item);
-        }
-
-        const avatar = item.querySelector('img');
-        const name = item.querySelector('span');
-        avatar.alt = `${player.username} skin face`;
-        name.textContent = player.username;
-        applyAvatar(avatar, player);
-        return item;
-    }
-
-    function getOrCreatePlayerRow(player) {
-        const key = player.uuid;
-        let tr = tableRowCache.get(key);
-        if (!tr) {
-            tr = document.createElement('tr');
-
-            const playerCell = document.createElement('td');
-            playerCell.className = 'player-inline';
-            const avatar = document.createElement('img');
-            avatar.className = 'player-avatar';
-            avatar.referrerPolicy = 'no-referrer';
-            const name = document.createElement('span');
-            playerCell.appendChild(avatar);
-            playerCell.appendChild(name);
-
-            const uuidCell = document.createElement('td');
-            const statusCell = document.createElement('td');
-            const expiresCell = document.createElement('td');
-
-            const actionsCell = document.createElement('td');
-            const actions = document.createElement('div');
-            actions.className = 'player-actions';
-
-            const kickButton = document.createElement('button');
-            kickButton.textContent = 'Kick';
-            kickButton.className = 'danger-button';
-
-            const tempBanButton = document.createElement('button');
-            tempBanButton.textContent = 'Temp Ban';
-            tempBanButton.className = 'danger-button';
-
-            const banButton = document.createElement('button');
-            banButton.textContent = 'Ban';
-            banButton.className = 'danger-button';
-
-            const unbanButton = document.createElement('button');
-            unbanButton.textContent = 'Unban';
-            unbanButton.className = 'secondary';
-
-            actions.appendChild(kickButton);
-            actions.appendChild(tempBanButton);
-            actions.appendChild(banButton);
-            actions.appendChild(unbanButton);
-            actionsCell.appendChild(actions);
-
-            tr.appendChild(playerCell);
-            tr.appendChild(uuidCell);
-            tr.appendChild(statusCell);
-            tr.appendChild(expiresCell);
-            tr.appendChild(actionsCell);
-
-            tableRowCache.set(key, tr);
-        }
-
-        const cells = tr.children;
-        const playerCell = cells[0];
-        const avatar = playerCell.children[0];
-        const name = playerCell.children[1];
-        const uuidCell = cells[1];
-        const statusCell = cells[2];
-        const expiresCell = cells[3];
-        const actions = cells[4].firstElementChild;
-        const kickButton = actions.children[0];
-        const tempBanButton = actions.children[1];
-        const banButton = actions.children[2];
-        const unbanButton = actions.children[3];
-
-        avatar.alt = `${player.username} skin face`;
-        name.textContent = player.username;
-        applyAvatar(avatar, player);
-
-        uuidCell.textContent = player.uuid;
-        statusCell.textContent = player.online ? 'Online' : 'Offline';
-        expiresCell.textContent = player.banExpiresAt ? new Date(player.banExpiresAt).toLocaleString() : (player.banned ? 'Permanent' : '-');
-
-        kickButton.disabled = !player.online;
-        kickButton.onclick = async () => {
-            if (!player.online) {
-                return;
-            }
-            const reason = document.getElementById('actionReason').value.trim();
-            try {
-                await api(`/api/players/${encodeURIComponent(player.uuid)}/kick`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ reason })
-                });
-                setStatus(`Kicked ${player.username}`, false);
-                await loadPlayers();
-            } catch (error) {
-                setStatus(`Kick failed for ${player.username}: ${error.message}`, true);
-            }
-        };
-
-        tempBanButton.onclick = async () => {
-            const reason = document.getElementById('actionReason').value.trim();
-            const durationMinutes = Number.parseInt(document.getElementById('banMinutes').value, 10);
-            if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
-                setStatus('Ban duration must be at least 1 minute', true);
-                return;
-            }
-
-            try {
-                const result = await api(`/api/players/${encodeURIComponent(player.uuid)}/temp-ban`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        username: player.username,
-                        durationMinutes,
-                        reason
-                    })
-                });
-                const expires = new Date(result.expiresAt).toLocaleString();
-                setStatus(`Temp-banned ${player.username} until ${expires}`, false);
-                await loadPlayers();
-            } catch (error) {
-                setStatus(`Temp ban failed for ${player.username}: ${error.message}`, true);
-            }
-        };
-
-        banButton.onclick = async () => {
-            const reason = document.getElementById('actionReason').value.trim();
-            try {
-                await api('/api/players/ban', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        username: player.username,
-                        uuid: player.uuid,
-                        reason
-                    })
-                });
-                setStatus(`Banned ${player.username}`, false);
-                await loadPlayers();
-            } catch (error) {
-                setStatus(`Ban failed for ${player.username}: ${error.message}`, true);
-            }
-        };
-
-        unbanButton.onclick = async () => {
-            try {
-                await api('/api/players/unban', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        username: player.username,
-                        uuid: player.uuid
-                    })
-                });
-                setStatus(`Unbanned ${player.username}`, false);
-                await loadPlayers();
-            } catch (error) {
-                setStatus(`Unban failed for ${player.username}: ${error.message}`, true);
-            }
-        };
-
-        return tr;
-    }
-
-    async function loadPlayers() {
+    async function loadPlayerList() {
         const data = await api('/api/players');
-        document.getElementById('playerCount').textContent = data.count ?? 0;
+        allPlayers = Array.isArray(data.allPlayers) ? data.allPlayers : [];
+        document.getElementById('playerCount').textContent = String(allPlayers.length);
+        renderPlayerDirectory();
 
-        const onlineList = document.getElementById('onlinePlayersTop');
-        const onlineKeys = new Set();
-        const onlineNodes = [];
-
-        if (Array.isArray(data.players) && data.players.length > 0) {
-            data.players.forEach(player => {
-                onlineKeys.add(player.uuid);
-                onlineNodes.push(getOrCreateOnlineItem(player));
-            });
-            for (const key of [...onlineNodeCache.keys()]) {
-                if (!onlineKeys.has(key)) {
-                    onlineNodeCache.delete(key);
-                }
+        if (selectedUuid) {
+            const stillExists = allPlayers.some(player => player.uuid === selectedUuid);
+            if (stillExists) {
+                await loadPlayerProfile(selectedUuid);
             }
-            onlineList.replaceChildren(...onlineNodes);
-        } else {
-            const empty = document.createElement('li');
-            empty.className = 'player-empty';
-            empty.textContent = 'No players online';
-            onlineList.replaceChildren(empty);
         }
+    }
 
-        const tbody = document.getElementById('players');
+    function renderPlayerDirectory() {
+        const search = document.getElementById('playerSearch').value.trim().toLowerCase();
+        const list = document.getElementById('playerDirectory');
+        list.innerHTML = '';
 
-        const allPlayers = Array.isArray(data.allPlayers) ? data.allPlayers : (Array.isArray(data.players) ? data.players : []);
-
-        if (allPlayers.length === 0) {
-            tableRowCache.clear();
-            const emptyRow = document.createElement('tr');
-            const cell = document.createElement('td');
-            cell.colSpan = 5;
-            cell.textContent = 'No players saved yet';
-            emptyRow.appendChild(cell);
-            tbody.replaceChildren(emptyRow);
-            return;
-        }
-
-        const tableKeys = new Set();
-        const tableRows = [];
-        allPlayers.forEach(player => {
-            tableKeys.add(player.uuid);
-            tableRows.push(getOrCreatePlayerRow(player));
+        const filtered = allPlayers.filter(player => {
+            if (!search) return true;
+            return `${player.username} ${player.uuid}`.toLowerCase().includes(search);
         });
 
-        for (const key of [...tableRowCache.keys()]) {
-            if (!tableKeys.has(key)) {
-                tableRowCache.delete(key);
-            }
+        if (filtered.length === 0) {
+            const empty = document.createElement('li');
+            empty.className = 'player-empty';
+            empty.textContent = 'No players found';
+            list.appendChild(empty);
+            return;
         }
-        tbody.replaceChildren(...tableRows);
+
+        filtered.forEach(player => {
+            const item = document.createElement('li');
+            item.className = `directory-item${player.uuid === selectedUuid ? ' active' : ''}`;
+
+            const dot = document.createElement('span');
+            dot.className = `status-dot ${player.online ? 'online' : 'offline'}`;
+
+            const name = document.createElement('span');
+            name.className = 'directory-name';
+            name.textContent = player.username;
+
+            item.appendChild(dot);
+            item.appendChild(name);
+            item.addEventListener('click', async () => {
+                selectedUuid = player.uuid;
+                renderPlayerDirectory();
+                await loadPlayerProfile(player.uuid);
+            });
+            list.appendChild(item);
+        });
     }
 
-    document.getElementById('refreshPlayers').addEventListener('click', async () => {
-        await loadPlayers();
-    });
+    async function loadPlayerProfile(uuid) {
+        const data = await api(`/api/players/profile/${encodeURIComponent(uuid)}`);
+        const profile = data.profile;
 
-    document.getElementById('banByName').addEventListener('click', async () => {
-        const username = document.getElementById('targetUsername').value.trim();
-        const reason = document.getElementById('actionReason').value.trim();
-        if (!username) {
-            setStatus('Enter a username to ban', true);
-            return;
-        }
+        document.getElementById('profileEmpty').style.display = 'none';
+        document.getElementById('profileContent').style.display = 'block';
 
-        try {
-            await api('/api/players/ban', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, reason })
-            });
-            setStatus(`Banned ${username}`, false);
-            await loadPlayers();
-        } catch (error) {
-            setStatus(`Ban failed for ${username}: ${error.message}`, true);
-        }
-    });
+        document.getElementById('profileName').textContent = profile.username || 'Unknown';
+        document.getElementById('profileUuid').textContent = profile.uuid || '-';
 
-    document.getElementById('unbanByName').addEventListener('click', async () => {
-        const username = document.getElementById('targetUsername').value.trim();
-        if (!username) {
-            setStatus('Enter a username to unban', true);
-            return;
-        }
+        const statusDot = document.getElementById('profileStatusDot');
+        statusDot.className = `status-dot ${profile.online ? 'online' : 'offline'}`;
+        document.getElementById('profileStatusText').textContent = profile.online ? 'Online' : 'Offline';
 
-        try {
-            await api('/api/players/unban', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
-            });
-            setStatus(`Unbanned ${username}`, false);
-            await loadPlayers();
-        } catch (error) {
-            setStatus(`Unban failed for ${username}: ${error.message}`, true);
-        }
-    });
+        document.getElementById('profileFirstJoined').textContent = formatDate(profile.firstJoined);
+        document.getElementById('profileLastSeen').textContent = formatDate(profile.lastSeen);
+        document.getElementById('profilePlaytime').textContent = formatPlaytime(profile.totalPlaytimeSeconds);
+        document.getElementById('profileSessions').textContent = String(profile.totalSessions ?? 0);
+        document.getElementById('profileIp').textContent = profile.lastIp || '-';
+        document.getElementById('profileCountry').textContent = profile.country || 'Unknown';
+
+        applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username);
+    }
+
+    document.getElementById('playerSearch').addEventListener('input', renderPlayerDirectory);
 
     document.getElementById('logout').addEventListener('click', async () => {
         await api('/api/logout', { method: 'POST' });
@@ -416,10 +218,15 @@
 
     (async () => {
         try {
-            await Promise.all([loadMe(), loadPlayers()]);
+            await Promise.all([loadMe(), loadPlayerList()]);
+            if (allPlayers.length > 0) {
+                selectedUuid = allPlayers[0].uuid;
+                renderPlayerDirectory();
+                await loadPlayerProfile(selectedUuid);
+            }
             setInterval(() => {
-                loadPlayers().catch(() => {});
-            }, 3000);
+                loadPlayerList().catch(() => {});
+            }, 5000);
         } catch {
             window.location.href = '/';
         }
@@ -427,4 +234,3 @@
 </script>
 </body>
 </html>
-

@@ -54,6 +54,17 @@ public final class Database {
                     + "last_seen_at INTEGER NOT NULL"
                     + ")");
 
+            statement.execute("CREATE TABLE IF NOT EXISTS player_activity ("
+                    + "uuid TEXT PRIMARY KEY,"
+                    + "first_joined INTEGER NOT NULL DEFAULT 0,"
+                    + "last_seen INTEGER NOT NULL DEFAULT 0,"
+                    + "total_playtime_seconds INTEGER NOT NULL DEFAULT 0,"
+                    + "total_sessions INTEGER NOT NULL DEFAULT 0,"
+                    + "current_session_start INTEGER NOT NULL DEFAULT 0,"
+                    + "last_ip TEXT NOT NULL DEFAULT '',"
+                    + "last_country TEXT NOT NULL DEFAULT ''"
+                    + ")");
+
             statement.execute("CREATE TABLE IF NOT EXISTS discord_webhook_config ("
                     + "id INTEGER PRIMARY KEY,"
                     + "enabled INTEGER NOT NULL,"

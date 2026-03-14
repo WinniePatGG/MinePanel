@@ -16,6 +16,8 @@ import de.winniepat.minePanel.logs.ServerLogService;
 import de.winniepat.minePanel.persistence.KnownPlayer;
 import de.winniepat.minePanel.persistence.KnownPlayerRepository;
 import de.winniepat.minePanel.persistence.LogRepository;
+import de.winniepat.minePanel.persistence.PlayerActivity;
+import de.winniepat.minePanel.persistence.PlayerActivityRepository;
 import de.winniepat.minePanel.persistence.UserRepository;
 import org.bukkit.BanEntry;
 import de.winniepat.minePanel.users.PanelPermission;
@@ -81,6 +83,7 @@ public final class WebPanelServer {
     private final PasswordHasher passwordHasher;
     private final LogRepository logRepository;
     private final KnownPlayerRepository knownPlayerRepository;
+    private final PlayerActivityRepository playerActivityRepository;
     private final DiscordWebhookService discordWebhookService;
     private final PanelLogger panelLogger;
     private final ServerLogService serverLogService;
@@ -98,6 +101,7 @@ public final class WebPanelServer {
             PasswordHasher passwordHasher,
             LogRepository logRepository,
             KnownPlayerRepository knownPlayerRepository,
+            PlayerActivityRepository playerActivityRepository,
             DiscordWebhookService discordWebhookService,
             PanelLogger panelLogger,
             ServerLogService serverLogService,
@@ -110,6 +114,7 @@ public final class WebPanelServer {
         this.passwordHasher = passwordHasher;
         this.logRepository = logRepository;
         this.knownPlayerRepository = knownPlayerRepository;
+        this.playerActivityRepository = playerActivityRepository;
         this.discordWebhookService = discordWebhookService;
         this.panelLogger = panelLogger;
         this.serverLogService = serverLogService;
@@ -224,6 +229,7 @@ public final class WebPanelServer {
             get("/logs", (request, response) -> handleLogs(request, response));
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
             get("/players", (request, response) -> handlePlayers(request, response));
+            get("/players/profile/:uuid", (request, response) -> handlePlayerProfile(request, response));
             get("/plugins", (request, response) -> handlePlugins(request, response));
             get("/uptime", (request, response) -> handleUptime(request, response));
             get("/health", (request, response) -> handleHealth(request, response));
@@ -536,6 +542,49 @@ public final class WebPanelServer {
                 "players", players.stream().filter(player -> Boolean.TRUE.equals(player.get("online"))).toList(),
                 "allPlayers", players
         ));
+    }
+
+    private String handlePlayerProfile(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+
+        UUID playerUuid;
+        try {
+            playerUuid = UUID.fromString(request.params("uuid"));
+        } catch (IllegalArgumentException exception) {
+            return json(response, 400, Map.of("error", "invalid_uuid"));
+        }
+
+        Optional<KnownPlayer> knownPlayer = knownPlayerRepository.findByUuid(playerUuid);
+        if (knownPlayer.isEmpty()) {
+            return json(response, 404, Map.of("error", "player_not_found"));
+        }
+
+        Optional<PlayerActivity> activity = playerActivityRepository.findByUuid(playerUuid);
+        boolean online = plugin.getServer().getPlayer(playerUuid) != null;
+        String username = knownPlayer.get().username();
+
+        long firstJoined = activity.map(PlayerActivity::firstJoined).orElse(0L);
+        long lastSeen = activity.map(PlayerActivity::lastSeen).orElse(knownPlayer.get().lastSeenAt());
+        long totalSessions = activity.map(PlayerActivity::totalSessions).orElse(0L);
+        long totalPlaytimeSeconds = activity.map(PlayerActivity::totalPlaytimeSeconds).orElse(0L);
+        long currentSessionStart = activity.map(PlayerActivity::currentSessionStart).orElse(0L);
+        if (online && currentSessionStart > 0) {
+            long now = Instant.now().toEpochMilli();
+            totalPlaytimeSeconds += Math.max(0L, (now - currentSessionStart) / 1000L);
+        }
+
+        Map<String, Object> profile = new HashMap<>();
+        profile.put("uuid", playerUuid.toString());
+        profile.put("username", username);
+        profile.put("online", online);
+        profile.put("firstJoined", firstJoined);
+        profile.put("lastSeen", lastSeen);
+        profile.put("totalPlaytimeSeconds", totalPlaytimeSeconds);
+        profile.put("totalSessions", totalSessions);
+        profile.put("lastIp", activity.map(PlayerActivity::lastIp).orElse(""));
+        profile.put("country", activity.map(PlayerActivity::lastCountry).orElse("Unknown"));
+
+        return json(response, 200, Map.of("profile", profile));
     }
 
     private String handleBanPlayer(Request request, Response response) {
@@ -873,6 +922,7 @@ public final class WebPanelServer {
     private List<Map<String, Object>> snapshotPlayerRoster() {
         List<OnlinePlayerSnapshot> onlinePlayers = snapshotOnlinePlayers();
         long now = Instant.now().toEpochMilli();
+        Map<UUID, PlayerActivity> activityByUuid = playerActivityRepository.findAllByUuid();
 
         for (OnlinePlayerSnapshot onlinePlayer : onlinePlayers) {
             knownPlayerRepository.upsert(onlinePlayer.uuid(), onlinePlayer.username(), now);
@@ -884,12 +934,25 @@ public final class WebPanelServer {
         for (KnownPlayer knownPlayer : knownPlayerRepository.findAll()) {
             String username = knownPlayer.username();
             BanStatus banStatus = nameBans.get(username.toLowerCase());
+            PlayerActivity activity = activityByUuid.get(knownPlayer.uuid());
+
+            long firstJoined = activity == null ? 0L : activity.firstJoined();
+            long lastSeen = activity == null ? knownPlayer.lastSeenAt() : Math.max(knownPlayer.lastSeenAt(), activity.lastSeen());
+            long totalPlaytimeSeconds = activity == null ? 0L : activity.totalPlaytimeSeconds();
+            long totalSessions = activity == null ? 0L : activity.totalSessions();
+            String lastIp = activity == null ? "" : activity.lastIp();
+            String country = activity == null || isBlank(activity.lastCountry()) ? "Unknown" : activity.lastCountry();
 
             Map<String, Object> player = new HashMap<>();
             player.put("uuid", knownPlayer.uuid().toString());
             player.put("username", username);
             player.put("online", false);
-            player.put("lastSeenAt", knownPlayer.lastSeenAt());
+            player.put("firstJoined", firstJoined);
+            player.put("lastSeen", lastSeen);
+            player.put("totalPlaytimeSeconds", totalPlaytimeSeconds);
+            player.put("totalSessions", totalSessions);
+            player.put("lastIp", lastIp);
+            player.put("country", country);
             player.put("banned", banStatus != null);
             player.put("banExpiresAt", banStatus == null ? null : banStatus.expiresAtMillis());
             byUuid.put(knownPlayer.uuid(), player);
@@ -905,9 +968,27 @@ public final class WebPanelServer {
             BanStatus banStatus = nameBans.get(onlinePlayer.username().toLowerCase());
             row.put("username", onlinePlayer.username());
             row.put("online", true);
-            row.put("lastSeenAt", now);
+            row.put("lastSeen", now);
+            row.putIfAbsent("firstJoined", 0L);
+            row.putIfAbsent("totalPlaytimeSeconds", 0L);
+            row.putIfAbsent("totalSessions", 0L);
+            row.putIfAbsent("lastIp", "");
+            row.putIfAbsent("country", "Unknown");
             row.put("banned", banStatus != null);
             row.put("banExpiresAt", banStatus == null ? null : banStatus.expiresAtMillis());
+
+            PlayerActivity activity = activityByUuid.get(onlinePlayer.uuid());
+            if (activity != null) {
+                row.put("firstJoined", activity.firstJoined());
+                row.put("totalSessions", activity.totalSessions());
+                long onlinePlaytime = activity.totalPlaytimeSeconds();
+                if (activity.currentSessionStart() > 0) {
+                    onlinePlaytime += Math.max(0L, (now - activity.currentSessionStart()) / 1000L);
+                }
+                row.put("totalPlaytimeSeconds", onlinePlaytime);
+                row.put("lastIp", activity.lastIp());
+                row.put("country", isBlank(activity.lastCountry()) ? "Unknown" : activity.lastCountry());
+            }
         }
 
         List<Map<String, Object>> roster = new ArrayList<>(byUuid.values());

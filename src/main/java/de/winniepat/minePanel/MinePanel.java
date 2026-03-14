@@ -8,11 +8,12 @@ import de.winniepat.minePanel.integrations.DiscordWebhookService;
 import de.winniepat.minePanel.logs.ChatCaptureListener;
 import de.winniepat.minePanel.logs.CommandCaptureListener;
 import de.winniepat.minePanel.logs.PanelLogger;
-import de.winniepat.minePanel.logs.PlayerSeenListener;
+import de.winniepat.minePanel.logs.PlayerActivityListener;
 import de.winniepat.minePanel.logs.ServerLogService;
 import de.winniepat.minePanel.persistence.Database;
 import de.winniepat.minePanel.persistence.KnownPlayerRepository;
 import de.winniepat.minePanel.persistence.LogRepository;
+import de.winniepat.minePanel.persistence.PlayerActivityRepository;
 import de.winniepat.minePanel.persistence.UserRepository;
 import de.winniepat.minePanel.web.BootstrapService;
 import de.winniepat.minePanel.web.WebPanelServer;
@@ -37,6 +38,7 @@ public final class MinePanel extends JavaPlugin {
     private DiscordWebhookService discordWebhookService;
     private LogRepository logRepository;
     private PanelLogger panelLogger;
+    private PlayerActivityRepository playerActivityRepository;
 
     @Override
     public void onEnable() {
@@ -50,6 +52,7 @@ public final class MinePanel extends JavaPlugin {
         UserRepository userRepository = new UserRepository(database);
         this.logRepository = new LogRepository(database);
         KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
+        this.playerActivityRepository = new PlayerActivityRepository(database);
         DiscordWebhookRepository discordWebhookRepository = new DiscordWebhookRepository(database);
         this.discordWebhookService = new DiscordWebhookService(getLogger(), discordWebhookRepository);
         SessionService sessionService = new SessionService(database, panelConfig.sessionTtlMinutes());
@@ -70,15 +73,27 @@ public final class MinePanel extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
-        getServer().getPluginManager().registerEvents(new PlayerSeenListener(knownPlayerRepository), this);
+        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository), this);
 
         for (OfflinePlayer offlinePlayer : getServer().getOfflinePlayers()) {
             if (offlinePlayer.getName() != null) {
                 knownPlayerRepository.upsert(offlinePlayer.getUniqueId(), offlinePlayer.getName());
+                playerActivityRepository.ensureFromOffline(
+                        offlinePlayer.getUniqueId(),
+                        Math.max(0L, offlinePlayer.getFirstPlayed()),
+                        Math.max(0L, offlinePlayer.getLastPlayed())
+                );
             }
         }
         getServer().getOnlinePlayers().forEach(player ->
-                knownPlayerRepository.upsert(player.getUniqueId(), player.getName())
+                {
+                    knownPlayerRepository.upsert(player.getUniqueId(), player.getName());
+                    long now = Instant.now().toEpochMilli();
+                    playerActivityRepository.onJoin(player.getUniqueId(), now,
+                            player.getAddress() != null && player.getAddress().getAddress() != null
+                                    ? player.getAddress().getAddress().getHostAddress()
+                                    : "");
+                }
         );
 
         this.webPanelServer = new WebPanelServer(
@@ -89,6 +104,7 @@ public final class MinePanel extends JavaPlugin {
                 passwordHasher,
                 this.logRepository,
                 knownPlayerRepository,
+                playerActivityRepository,
                 discordWebhookService,
                 panelLogger,
                 serverLogService,
@@ -105,6 +121,13 @@ public final class MinePanel extends JavaPlugin {
     public void onDisable() {
         if (webPanelServer != null) {
             webPanelServer.stop();
+        }
+
+        if (playerActivityRepository != null) {
+            long now = Instant.now().toEpochMilli();
+            getServer().getOnlinePlayers().forEach(player ->
+                    playerActivityRepository.onQuit(player.getUniqueId(), now)
+            );
         }
 
         if (panelLogger != null) {

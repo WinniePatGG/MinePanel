@@ -13,16 +13,16 @@
         <div class="sidebar-brand">MinePanel</div>
         <div id="me" class="sidebar-meta"></div>
         <nav class="side-nav">
-            <button class="side-category-toggle expanded" data-category="server" type="button">Server</button>
-            <div class="side-category-items expanded" data-category-items="server">
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
                 <a class="side-link" href="/console">Console</a>
                 <a class="side-link" href="/dashboard/resources">Resources</a>
                 <a class="side-link" href="/dashboard/players">Players</a>
                 <a class="side-link" href="/dashboard/bans">Bans</a>
                 <a class="side-link" href="/dashboard/plugins">Plugins</a>
             </div>
-            <button class="side-category-toggle expanded" data-category="panel" type="button">Panel</button>
-            <div class="side-category-items expanded" data-category-items="panel">
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
                 <a class="side-link active" href="/dashboard/users">Users</a>
                 <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
                 <a class="side-link" href="/dashboard/themes">Themes</a>
@@ -57,14 +57,37 @@
 
 <script>
     function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
         document.querySelectorAll('.side-category-toggle').forEach(toggle => {
             const category = toggle.dataset.category;
             const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
-            if (!items) return;
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
 
             toggle.addEventListener('click', () => {
-                const expanded = items.classList.toggle('expanded');
+                const expanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expanded);
                 toggle.classList.toggle('expanded', expanded);
+                savedState[category] = expanded;
+                persistState();
             });
         });
     }

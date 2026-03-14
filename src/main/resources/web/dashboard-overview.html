@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Overview</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link active" href="/dashboard/overview">Overview</a>
+            <a class="side-link" href="/dashboard/console">Console</a>
+            <a class="side-link" href="/dashboard/players">Players</a>
+            <a class="side-link" href="/dashboard/bans">Bans</a>
+            <a class="side-link" href="/dashboard/users">Users</a>
+            <a class="side-link" href="/dashboard/plugins">Plugins</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Overview</h1>
+        <section class="stats-grid spaced-top">
+            <div class="card stat-card">
+                <div class="stat-label">Online Players</div>
+                <div id="statOnline" class="stat-value">0</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">Known Players</div>
+                <div id="statKnown" class="stat-value">0</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">Installed Plugins</div>
+                <div id="statPlugins" class="stat-value">0</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">Banned Players</div>
+                <div id="statBans" class="stat-value">0</div>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Recent Panel Activity</h2>
+            <pre id="recentLogs" class="log-rectangle short"></pre>
+        </section>
+    </main>
+</div>
+
+<script>
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function loadOverview() {
+        const [players, plugins, logs] = await Promise.all([
+            api('/api/players'),
+            api('/api/plugins'),
+            api('/api/logs?limit=50')
+        ]);
+
+        const allPlayers = Array.isArray(players.allPlayers) ? players.allPlayers : [];
+        const bannedCount = allPlayers.filter(player => player.banned).length;
+
+        document.getElementById('statOnline').textContent = String(players.count ?? 0);
+        document.getElementById('statKnown').textContent = String(allPlayers.length);
+        document.getElementById('statPlugins').textContent = String(plugins.count ?? 0);
+        document.getElementById('statBans').textContent = String(bannedCount);
+
+        const recentLogs = Array.isArray(logs.panelLogs) ? logs.panelLogs.slice().reverse() : [];
+        document.getElementById('recentLogs').textContent = recentLogs
+            .map(entry => `[${new Date(entry.createdAt).toISOString()}] [${entry.kind}] [${entry.source}] ${entry.message}`)
+            .join('\n');
+    }
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            await Promise.all([loadMe(), loadOverview()]);
+            setInterval(() => {
+                loadOverview().catch(() => {});
+            }, 5000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

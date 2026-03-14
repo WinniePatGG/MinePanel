@@ -126,6 +126,28 @@ p {
     padding: 26px 22px 24px;
 }
 
+.stats-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-card {
+    padding: 14px;
+}
+
+.stat-label {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.stat-value {
+    margin-top: 4px;
+    font-size: 28px;
+    font-weight: 700;
+    color: #f1f5ff;
+}
+
 .card {
     background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
     border: 1px solid var(--border);
@@ -267,6 +289,10 @@ button.secondary {
     overflow-x: hidden;
     font-size: 13px;
     line-height: 1.35;
+}
+
+.log-rectangle.short {
+    height: 260px;
 }
 
 .console-send-row {
@@ -434,6 +460,10 @@ tbody tr:hover {
 
     .row {
         grid-template-columns: 1fr;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr 1fr;
     }
 
     .inline-form {

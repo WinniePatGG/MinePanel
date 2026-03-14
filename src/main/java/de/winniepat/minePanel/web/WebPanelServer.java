@@ -122,7 +122,7 @@ public final class WebPanelServer {
 
         get("/dashboard", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard.html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-overview.html");
         });
 
         get("/dashboard/console", (request, response) -> {
@@ -138,6 +138,16 @@ public final class WebPanelServer {
         get("/dashboard/plugins", (request, response) -> {
             response.type("text/html");
             return ResourceLoader.loadUtf8Text("/web/dashboard-plugins.html");
+        });
+
+        get("/dashboard/overview", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-overview.html");
+        });
+
+        get("/dashboard/bans", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-bans.html");
         });
 
         get("/dashboard/players", (request, response) -> {

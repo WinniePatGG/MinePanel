@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Bans</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <a class="side-link" href="/dashboard/console">Console</a>
+            <a class="side-link" href="/dashboard/players">Players</a>
+            <a class="side-link active" href="/dashboard/bans">Bans</a>
+            <a class="side-link" href="/dashboard/users">Users</a>
+            <a class="side-link" href="/dashboard/plugins">Plugins</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Bans</h1>
+        <p>Current bans: <span id="banCount">0</span></p>
+
+        <section class="card spaced-top">
+            <h2>Ban List</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <th>Action</th>
+                    </tr>
+                    </thead>
+                    <tbody id="bans"></tbody>
+                </table>
+            </div>
+            <p id="banStatus" class="action-status"></p>
+        </section>
+    </main>
+</div>
+
+<script>
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    function setStatus(message, isError) {
+        const status = document.getElementById('banStatus');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function loadBans() {
+        const players = await api('/api/players');
+        const allPlayers = Array.isArray(players.allPlayers) ? players.allPlayers : [];
+        const bans = allPlayers.filter(player => player.banned);
+
+        document.getElementById('banCount').textContent = String(bans.length);
+        const tbody = document.getElementById('bans');
+        tbody.innerHTML = '';
+
+        if (bans.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 4;
+            cell.textContent = 'No active bans';
+            row.appendChild(cell);
+            tbody.appendChild(row);
+            return;
+        }
+
+        bans.forEach(player => {
+            const row = document.createElement('tr');
+
+            const playerCell = document.createElement('td');
+            playerCell.textContent = player.username;
+            row.appendChild(playerCell);
+
+            const statusCell = document.createElement('td');
+            statusCell.textContent = player.online ? 'Online' : 'Offline';
+            row.appendChild(statusCell);
+
+            const expiresCell = document.createElement('td');
+            expiresCell.textContent = player.banExpiresAt ? new Date(player.banExpiresAt).toLocaleString() : 'Permanent';
+            row.appendChild(expiresCell);
+
+            const actionCell = document.createElement('td');
+            const button = document.createElement('button');
+            button.className = 'secondary';
+            button.textContent = 'Unban';
+            button.addEventListener('click', async () => {
+                try {
+                    await api('/api/players/unban', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: player.username, uuid: player.uuid })
+                    });
+                    setStatus(`Unbanned ${player.username}`, false);
+                    await loadBans();
+                } catch (error) {
+                    setStatus(`Failed to unban ${player.username}: ${error.message}`, true);
+                }
+            });
+            actionCell.appendChild(button);
+            row.appendChild(actionCell);
+
+            tbody.appendChild(row);
+        });
+    }
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            await Promise.all([loadMe(), loadBans()]);
+            setInterval(() => {
+                loadBans().catch(() => {});
+            }, 5000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

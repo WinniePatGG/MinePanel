@@ -6,6 +6,4 @@ web:
 security:
   bootstrapTokenLength: 32
 
-logging:
-  separateDirectory: panel-logs
 

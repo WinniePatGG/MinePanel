@@ -43,7 +43,6 @@ public final class MinePanel extends JavaPlugin {
         saveDefaultConfig();
 
         WebPanelConfig panelConfig = WebPanelConfig.fromConfig(getConfig());
-        Path panelLogDirectory = getDataFolder().toPath().resolve(panelConfig.logDirectoryName());
 
         this.database = new Database(getDataFolder().toPath().resolve("panel.db"));
         this.database.initialize();
@@ -55,12 +54,11 @@ public final class MinePanel extends JavaPlugin {
         this.discordWebhookService = new DiscordWebhookService(getLogger(), discordWebhookRepository);
         SessionService sessionService = new SessionService(database, panelConfig.sessionTtlMinutes());
         PasswordHasher passwordHasher = new PasswordHasher();
-        this.panelLogger = new PanelLogger(getLogger(), logRepository, discordWebhookService, panelLogDirectory);
+        this.panelLogger = new PanelLogger(logRepository, discordWebhookService);
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
 
         logRepository.clearLogs();
-        panelLogger.clearLogFiles();
 
         bootstrapService.getBootstrapToken().ifPresent(token -> {
                 getLogger().warning("--------------------------------------------------------");

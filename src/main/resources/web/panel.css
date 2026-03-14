@@ -25,6 +25,20 @@
     --button-hover-bg: #5a95ff;
     --button-secondary-bg: #21314d;
     --button-secondary-border: #344769;
+    --input-bg: #0f1930;
+    --table-bg: #0e172b;
+    --table-head-bg: #13203b;
+    --table-row-border: #1f2d49;
+    --table-row-hover-bg: #111d35;
+    --table-head-text: #d7e2f8;
+    --table-cell-text: #c7d4ee;
+    --player-box-bg: #0f1930;
+    --player-box-border: #23365a;
+    --player-box-hover-bg: #162642;
+    --player-box-active-bg: #1b2c4a;
+    --player-box-active-border: #3f73cf;
+    --player-muted-bg: #101a2f;
+    --player-muted-border: #2a3f63;
 }
 
 * {
@@ -305,7 +319,7 @@ button {
     width: 100%;
     border-radius: 8px;
     border: 1px solid var(--border);
-    background: #0f1930;
+    background: var(--input-bg);
     color: var(--text);
     padding: 10px 11px;
     font-size: 14px;
@@ -503,8 +517,8 @@ button.secondary {
 
 .player-empty {
     color: var(--text-muted);
-    background: #101a2f;
-    border: 1px dashed #2a3f63;
+    background: var(--player-muted-bg);
+    border: 1px dashed var(--player-muted-border);
     border-radius: 8px;
     padding: 10px;
 }
@@ -548,20 +562,20 @@ button.secondary {
     display: flex;
     align-items: center;
     gap: 8px;
-    border: 1px solid #23365a;
+    border: 1px solid var(--player-box-border);
     border-radius: 8px;
-    background: #0f1930;
+    background: var(--player-box-bg);
     padding: 8px 10px;
     cursor: pointer;
 }
 
 .directory-item:hover {
-    background: #162642;
+    background: var(--player-box-hover-bg);
 }
 
 .directory-item.active {
-    border-color: #3f73cf;
-    background: #1b2c4a;
+    border-color: var(--player-box-active-border);
+    background: var(--player-box-active-bg);
 }
 
 .directory-name {
@@ -637,8 +651,8 @@ button.secondary {
 }
 
 .profile-field {
-    background: #0f1930;
-    border: 1px solid #24395e;
+    background: var(--player-box-bg);
+    border: 1px solid var(--player-box-border);
     border-radius: 8px;
     padding: 9px 10px;
     display: grid;
@@ -790,28 +804,28 @@ button.secondary {
 table {
     width: 100%;
     border-collapse: collapse;
-    background: #0e172b;
+    background: var(--table-bg);
 }
 
 th,
 td {
-    border-bottom: 1px solid #1f2d49;
+    border-bottom: 1px solid var(--table-row-border);
     padding: 8px;
     text-align: left;
 }
 
 th {
-    background: #13203b;
-    color: #d7e2f8;
+    background: var(--table-head-bg);
+    color: var(--table-head-text);
     font-size: 13px;
 }
 
 td {
-    color: #c7d4ee;
+    color: var(--table-cell-text);
 }
 
 tbody tr:hover {
-    background: #111d35;
+    background: var(--table-row-hover-bg);
 }
 
 @media (max-width: 960px) {

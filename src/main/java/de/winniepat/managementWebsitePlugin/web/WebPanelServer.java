@@ -15,6 +15,7 @@ import de.winniepat.managementWebsitePlugin.users.PanelUser;
 import de.winniepat.managementWebsitePlugin.users.PanelUserAuth;
 import de.winniepat.managementWebsitePlugin.users.UserRole;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import spark.Request;
 import spark.Response;
 
@@ -122,6 +123,11 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-users.html");
         });
 
+        get("/dashboard/plugins", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-plugins.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return ResourceLoader.loadUtf8Text("/web/panel.css");
@@ -144,6 +150,7 @@ public final class WebPanelServer {
             get("/logs", (request, response) -> handleLogs(request, response));
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
             get("/players", (request, response) -> handlePlayers(request, response));
+            get("/plugins", (request, response) -> handlePlugins(request, response));
             post("/console/send", (request, response) -> handleSendConsole(request, response));
         });
 
@@ -333,6 +340,15 @@ public final class WebPanelServer {
         ));
     }
 
+    private String handlePlugins(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        List<Map<String, Object>> plugins = snapshotInstalledPlugins();
+        return json(response, 200, Map.of(
+                "count", plugins.size(),
+                "plugins", plugins
+        ));
+    }
+
     private String handleSendConsole(Request request, Response response) {
         PanelUser user = requireUser(request, PanelPermission.SEND_CONSOLE);
 
@@ -382,6 +398,28 @@ public final class WebPanelServer {
             throw new IllegalStateException("Interrupted while reading online players", exception);
         } catch (ExecutionException | TimeoutException exception) {
             throw new IllegalStateException("Could not read online players", exception);
+        }
+    }
+
+    private List<Map<String, Object>> snapshotInstalledPlugins() {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin, () ->
+                    java.util.Arrays.stream(plugin.getServer().getPluginManager().getPlugins())
+                            .sorted(Comparator.comparing(Plugin::getName, String.CASE_INSENSITIVE_ORDER))
+                            .map(current -> Map.<String, Object>of(
+                                    "name", current.getName(),
+                                    "version", current.getDescription().getVersion(),
+                                    "enabled", current.isEnabled(),
+                                    "main", current.getDescription().getMain(),
+                                    "authors", current.getDescription().getAuthors()
+                            ))
+                            .toList()
+            ).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while reading plugins", exception);
+        } catch (ExecutionException | TimeoutException exception) {
+            throw new IllegalStateException("Could not read installed plugins", exception);
         }
     }
 

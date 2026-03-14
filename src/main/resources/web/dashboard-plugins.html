@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Management Dashboard - Plugins</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">Winnie Panel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/console">Console</a>
+            <a class="side-link" href="/dashboard/users">Users</a>
+            <a class="side-link active" href="/dashboard/plugins">Plugins</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Plugins</h1>
+        <p>Installed server plugins: <span id="pluginCount">0</span></p>
+
+        <section class="card spaced-top">
+            <h2>Installed Plugins</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Version</th>
+                        <th>Enabled</th>
+                        <th>Main Class</th>
+                        <th>Authors</th>
+                    </tr>
+                    </thead>
+                    <tbody id="plugins"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function renderPluginRow(plugin) {
+        const tr = document.createElement('tr');
+
+        const nameTd = document.createElement('td');
+        nameTd.textContent = plugin.name || 'Unknown';
+        tr.appendChild(nameTd);
+
+        const versionTd = document.createElement('td');
+        versionTd.textContent = plugin.version || '-';
+        tr.appendChild(versionTd);
+
+        const enabledTd = document.createElement('td');
+        enabledTd.textContent = plugin.enabled ? 'Yes' : 'No';
+        tr.appendChild(enabledTd);
+
+        const mainTd = document.createElement('td');
+        mainTd.textContent = plugin.main || '-';
+        tr.appendChild(mainTd);
+
+        const authorsTd = document.createElement('td');
+        const authors = Array.isArray(plugin.authors) ? plugin.authors : [];
+        authorsTd.textContent = authors.length > 0 ? authors.join(', ') : '-';
+        tr.appendChild(authorsTd);
+
+        return tr;
+    }
+
+    async function loadPlugins() {
+        const data = await api('/api/plugins');
+        document.getElementById('pluginCount').textContent = data.count ?? 0;
+
+        const tbody = document.getElementById('plugins');
+        tbody.innerHTML = '';
+
+        if (!Array.isArray(data.plugins) || data.plugins.length === 0) {
+            const emptyRow = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 5;
+            cell.textContent = 'No plugins found';
+            emptyRow.appendChild(cell);
+            tbody.appendChild(emptyRow);
+            return;
+        }
+
+        data.plugins.forEach(plugin => {
+            tbody.appendChild(renderPluginRow(plugin));
+        });
+    }
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            await Promise.all([loadMe(), loadPlugins()]);
+            setInterval(() => {
+                loadPlugins().catch(() => {});
+            }, 5000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

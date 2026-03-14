@@ -8,22 +8,31 @@ import de.winniepat.managementWebsitePlugin.config.WebPanelConfig;
 import de.winniepat.managementWebsitePlugin.logs.PanelLogEntry;
 import de.winniepat.managementWebsitePlugin.logs.PanelLogger;
 import de.winniepat.managementWebsitePlugin.logs.ServerLogService;
+import de.winniepat.managementWebsitePlugin.persistence.KnownPlayer;
+import de.winniepat.managementWebsitePlugin.persistence.KnownPlayerRepository;
 import de.winniepat.managementWebsitePlugin.persistence.LogRepository;
 import de.winniepat.managementWebsitePlugin.persistence.UserRepository;
+import org.bukkit.BanEntry;
 import de.winniepat.managementWebsitePlugin.users.PanelPermission;
 import de.winniepat.managementWebsitePlugin.users.PanelUser;
 import de.winniepat.managementWebsitePlugin.users.PanelUserAuth;
 import de.winniepat.managementWebsitePlugin.users.UserRole;
+import org.bukkit.BanList;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import spark.Request;
 import spark.Response;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -50,6 +59,7 @@ public final class WebPanelServer {
     private final SessionService sessionService;
     private final PasswordHasher passwordHasher;
     private final LogRepository logRepository;
+    private final KnownPlayerRepository knownPlayerRepository;
     private final PanelLogger panelLogger;
     private final ServerLogService serverLogService;
     private final BootstrapService bootstrapService;
@@ -62,6 +72,7 @@ public final class WebPanelServer {
             SessionService sessionService,
             PasswordHasher passwordHasher,
             LogRepository logRepository,
+            KnownPlayerRepository knownPlayerRepository,
             PanelLogger panelLogger,
             ServerLogService serverLogService,
             BootstrapService bootstrapService
@@ -72,6 +83,7 @@ public final class WebPanelServer {
         this.sessionService = sessionService;
         this.passwordHasher = passwordHasher;
         this.logRepository = logRepository;
+        this.knownPlayerRepository = knownPlayerRepository;
         this.panelLogger = panelLogger;
         this.serverLogService = serverLogService;
         this.bootstrapService = bootstrapService;
@@ -128,6 +140,11 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-plugins.html");
         });
 
+        get("/dashboard/players", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-players.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return ResourceLoader.loadUtf8Text("/web/panel.css");
@@ -151,6 +168,10 @@ public final class WebPanelServer {
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
             get("/players", (request, response) -> handlePlayers(request, response));
             get("/plugins", (request, response) -> handlePlugins(request, response));
+            post("/players/:uuid/kick", (request, response) -> handleKickPlayer(request, response));
+            post("/players/:uuid/temp-ban", (request, response) -> handleTempBanPlayer(request, response));
+            post("/players/ban", (request, response) -> handleBanPlayer(request, response));
+            post("/players/unban", (request, response) -> handleUnbanPlayer(request, response));
             post("/console/send", (request, response) -> handleSendConsole(request, response));
         });
 
@@ -333,11 +354,53 @@ public final class WebPanelServer {
 
     private String handlePlayers(Request request, Response response) {
         requireUser(request, PanelPermission.VIEW_DASHBOARD);
-        List<Map<String, String>> players = snapshotOnlinePlayers();
+        List<Map<String, Object>> players = snapshotPlayerRoster();
+        long onlineCount = players.stream()
+                .filter(player -> Boolean.TRUE.equals(player.get("online")))
+                .count();
+
         return json(response, 200, Map.of(
-                "count", players.size(),
-                "players", players
+                "count", onlineCount,
+                "players", players.stream().filter(player -> Boolean.TRUE.equals(player.get("online"))).toList(),
+                "allPlayers", players
         ));
+    }
+
+    private String handleBanPlayer(Request request, Response response) {
+        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_PLAYERS);
+
+        BanPayload payload = gson.fromJson(request.body(), BanPayload.class);
+        String username = resolveTargetUsername(payload == null ? null : payload.username(), payload == null ? null : payload.uuid());
+        if (username == null) {
+            return json(response, 400, Map.of("error", "invalid_player"));
+        }
+
+        String reason = isBlank(payload == null ? null : payload.reason()) ? "Banned by panel moderator" : payload.reason().trim();
+        PlayerActionResult result = banPlayer(username, null, reason, actingUser.username());
+        if (!result.success()) {
+            return json(response, 500, Map.of("error", result.error() == null ? "ban_failed" : result.error()));
+        }
+
+        panelLogger.log("AUDIT", actingUser.username(), "Banned player " + username + ": " + reason);
+        return json(response, 200, Map.of("ok", true, "username", username));
+    }
+
+    private String handleUnbanPlayer(Request request, Response response) {
+        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_PLAYERS);
+
+        UnbanPayload payload = gson.fromJson(request.body(), UnbanPayload.class);
+        String username = resolveTargetUsername(payload == null ? null : payload.username(), payload == null ? null : payload.uuid());
+        if (username == null) {
+            return json(response, 400, Map.of("error", "invalid_player"));
+        }
+
+        boolean removed = unbanPlayer(username);
+        if (!removed) {
+            return json(response, 404, Map.of("error", "player_not_banned"));
+        }
+
+        panelLogger.log("AUDIT", actingUser.username(), "Unbanned player " + username);
+        return json(response, 200, Map.of("ok", true, "username", username));
     }
 
     private String handlePlugins(Request request, Response response) {
@@ -346,6 +409,63 @@ public final class WebPanelServer {
         return json(response, 200, Map.of(
                 "count", plugins.size(),
                 "plugins", plugins
+        ));
+    }
+
+    private String handleKickPlayer(Request request, Response response) {
+        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_PLAYERS);
+
+        UUID playerUuid;
+        try {
+            playerUuid = UUID.fromString(request.params("uuid"));
+        } catch (IllegalArgumentException exception) {
+            return json(response, 400, Map.of("error", "invalid_uuid"));
+        }
+
+        KickPayload payload = gson.fromJson(request.body(), KickPayload.class);
+        String reason = payload == null || isBlank(payload.reason()) ? "Kicked by panel moderator" : payload.reason().trim();
+
+        PlayerActionResult result = kickPlayerByUuid(playerUuid, reason);
+        if (!result.success()) {
+            return json(response, 404, Map.of("error", result.error() == null ? "player_not_online" : result.error()));
+        }
+
+        panelLogger.log("AUDIT", actingUser.username(), "Kicked player " + result.username() + ": " + reason);
+        return json(response, 200, Map.of("ok", true, "username", result.username()));
+    }
+
+    private String handleTempBanPlayer(Request request, Response response) {
+        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_PLAYERS);
+
+        UUID playerUuid;
+        try {
+            playerUuid = UUID.fromString(request.params("uuid"));
+        } catch (IllegalArgumentException exception) {
+            return json(response, 400, Map.of("error", "invalid_uuid"));
+        }
+
+        TempBanPayload payload = gson.fromJson(request.body(), TempBanPayload.class);
+        if (payload == null || payload.durationMinutes() == null) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        int durationMinutes = Math.max(1, Math.min(43_200, payload.durationMinutes()));
+        String reason = isBlank(payload.reason()) ? "Temporarily banned by panel moderator" : payload.reason().trim();
+        String resolvedUsername = resolveTargetUsername(payload.username(), playerUuid.toString());
+        if (resolvedUsername == null) {
+            return json(response, 400, Map.of("error", "invalid_player"));
+        }
+
+        TempBanResult result = tempBanPlayer(playerUuid, resolvedUsername, durationMinutes, reason, actingUser.username());
+        if (!result.success()) {
+            return json(response, 404, Map.of("error", result.error() == null ? "ban_failed" : result.error()));
+        }
+
+        panelLogger.log("AUDIT", actingUser.username(), "Temp-banned player " + result.username() + " for " + durationMinutes + " minute(s): " + reason);
+        return json(response, 200, Map.of(
+                "ok", true,
+                "username", result.username(),
+                "expiresAt", result.expiresAtMillis()
         ));
     }
 
@@ -382,15 +502,67 @@ public final class WebPanelServer {
         ));
     }
 
-    private List<Map<String, String>> snapshotOnlinePlayers() {
+    private List<Map<String, Object>> snapshotPlayerRoster() {
+        List<OnlinePlayerSnapshot> onlinePlayers = snapshotOnlinePlayers();
+        long now = Instant.now().toEpochMilli();
+
+        for (OnlinePlayerSnapshot onlinePlayer : onlinePlayers) {
+            knownPlayerRepository.upsert(onlinePlayer.uuid(), onlinePlayer.username(), now);
+        }
+
+        Map<String, BanStatus> nameBans = snapshotNameBans();
+        Map<UUID, Map<String, Object>> byUuid = new HashMap<>();
+
+        for (KnownPlayer knownPlayer : knownPlayerRepository.findAll()) {
+            String username = knownPlayer.username();
+            BanStatus banStatus = nameBans.get(username.toLowerCase());
+
+            Map<String, Object> player = new HashMap<>();
+            player.put("uuid", knownPlayer.uuid().toString());
+            player.put("username", username);
+            player.put("online", false);
+            player.put("lastSeenAt", knownPlayer.lastSeenAt());
+            player.put("banned", banStatus != null);
+            player.put("banExpiresAt", banStatus == null ? null : banStatus.expiresAtMillis());
+            byUuid.put(knownPlayer.uuid(), player);
+        }
+
+        for (OnlinePlayerSnapshot onlinePlayer : onlinePlayers) {
+            Map<String, Object> row = byUuid.computeIfAbsent(onlinePlayer.uuid(), ignored -> {
+                Map<String, Object> created = new HashMap<>();
+                created.put("uuid", onlinePlayer.uuid().toString());
+                return created;
+            });
+
+            BanStatus banStatus = nameBans.get(onlinePlayer.username().toLowerCase());
+            row.put("username", onlinePlayer.username());
+            row.put("online", true);
+            row.put("lastSeenAt", now);
+            row.put("banned", banStatus != null);
+            row.put("banExpiresAt", banStatus == null ? null : banStatus.expiresAtMillis());
+        }
+
+        List<Map<String, Object>> roster = new ArrayList<>(byUuid.values());
+        roster.sort((left, right) -> {
+            boolean leftOnline = Boolean.TRUE.equals(left.get("online"));
+            boolean rightOnline = Boolean.TRUE.equals(right.get("online"));
+            if (leftOnline != rightOnline) {
+                return leftOnline ? -1 : 1;
+            }
+
+            String leftName = String.valueOf(left.getOrDefault("username", ""));
+            String rightName = String.valueOf(right.getOrDefault("username", ""));
+            return leftName.compareToIgnoreCase(rightName);
+        });
+        return roster;
+    }
+
+    private List<OnlinePlayerSnapshot> snapshotOnlinePlayers() {
         try {
             return plugin.getServer().getScheduler().callSyncMethod(plugin, () ->
                     plugin.getServer().getOnlinePlayers().stream()
                             .sorted(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
-                            .map(player -> Map.of(
-                                    "username", player.getName(),
-                                    "uuid", player.getUniqueId().toString()
-                            ))
+                            .map(player -> new OnlinePlayerSnapshot(player.getUniqueId(), player.getName()))
                             .toList()
             ).get(2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
@@ -398,6 +570,28 @@ public final class WebPanelServer {
             throw new IllegalStateException("Interrupted while reading online players", exception);
         } catch (ExecutionException | TimeoutException exception) {
             throw new IllegalStateException("Could not read online players", exception);
+        }
+    }
+
+    private Map<String, BanStatus> snapshotNameBans() {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                Map<String, BanStatus> bans = new HashMap<>();
+                for (BanEntry banEntry : plugin.getServer().getBanList(BanList.Type.NAME).getBanEntries()) {
+                    String target = banEntry.getTarget();
+                    if (target == null) {
+                        continue;
+                    }
+                    Date expiration = banEntry.getExpiration();
+                    bans.put(target.toLowerCase(), new BanStatus(expiration == null ? null : expiration.getTime()));
+                }
+                return bans;
+            }).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while reading bans", exception);
+        } catch (ExecutionException | TimeoutException exception) {
+            throw new IllegalStateException("Could not read bans", exception);
         }
     }
 
@@ -438,6 +632,124 @@ public final class WebPanelServer {
         } catch (ExecutionException | TimeoutException exception) {
             return new CommandDispatchResult(false, "dispatch_error: " + exception.getClass().getSimpleName());
         }
+    }
+
+    private PlayerActionResult kickPlayerByUuid(UUID playerUuid, String reason) {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                Player target = plugin.getServer().getPlayer(playerUuid);
+                if (target == null) {
+                    return new PlayerActionResult(false, null, "player_not_online");
+                }
+                String username = target.getName();
+                target.kickPlayer(reason);
+                return new PlayerActionResult(true, username, null);
+            }).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new PlayerActionResult(false, null, "interrupted");
+        } catch (ExecutionException | TimeoutException exception) {
+            return new PlayerActionResult(false, null, "dispatch_error");
+        }
+    }
+
+    private TempBanResult tempBanPlayer(UUID playerUuid, String username, int durationMinutes, String reason, String actingUsername) {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                Player onlinePlayer = plugin.getServer().getPlayer(playerUuid);
+                Date expiresAt = Date.from(Instant.now().plus(durationMinutes, ChronoUnit.MINUTES));
+                plugin.getServer().getBanList(BanList.Type.NAME)
+                        .addBan(username, reason, expiresAt, "WebPanel:" + actingUsername);
+
+                if (onlinePlayer != null) {
+                    onlinePlayer.kickPlayer("Temporarily banned for " + durationMinutes + " minute(s). Reason: " + reason);
+                }
+
+                return new TempBanResult(true, username, expiresAt.getTime(), null);
+            }).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new TempBanResult(false, null, 0L, "interrupted");
+        } catch (ExecutionException | TimeoutException exception) {
+            return new TempBanResult(false, null, 0L, "dispatch_error");
+        }
+    }
+
+    private PlayerActionResult banPlayer(String username, UUID playerUuid, String reason, String actingUsername) {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                plugin.getServer().getBanList(BanList.Type.NAME)
+                        .addBan(username, reason, null, "WebPanel:" + actingUsername);
+
+                Player onlineTarget = null;
+                if (playerUuid != null) {
+                    onlineTarget = plugin.getServer().getPlayer(playerUuid);
+                }
+                if (onlineTarget == null) {
+                    onlineTarget = plugin.getServer().getPlayerExact(username);
+                }
+                if (onlineTarget != null) {
+                    onlineTarget.kickPlayer("Banned. Reason: " + reason);
+                }
+
+                return new PlayerActionResult(true, username, null);
+            }).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new PlayerActionResult(false, null, "interrupted");
+        } catch (ExecutionException | TimeoutException exception) {
+            return new PlayerActionResult(false, null, "dispatch_error");
+        }
+    }
+
+    private boolean unbanPlayer(String username) {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                BanEntry banEntry = plugin.getServer().getBanList(BanList.Type.NAME).getBanEntry(username);
+                if (banEntry == null) {
+                    return false;
+                }
+                plugin.getServer().getBanList(BanList.Type.NAME).pardon(username);
+                return true;
+            }).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException | TimeoutException exception) {
+            return false;
+        }
+    }
+
+    private String resolveTargetUsername(String usernameRaw, String uuidRaw) {
+        String sanitized = sanitizeUsername(usernameRaw);
+        if (sanitized != null) {
+            return sanitized;
+        }
+
+        if (uuidRaw == null || uuidRaw.isBlank()) {
+            return null;
+        }
+
+        try {
+            UUID uuid = UUID.fromString(uuidRaw);
+            return knownPlayerRepository.findByUuid(uuid)
+                    .map(KnownPlayer::username)
+                    .orElse(null);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private String sanitizeUsername(String rawUsername) {
+        if (rawUsername == null || rawUsername.isBlank()) {
+            return null;
+        }
+
+        String trimmed = rawUsername.trim();
+        if (!trimmed.matches("^[a-zA-Z0-9_]{3,16}$")) {
+            return null;
+        }
+        return trimmed;
     }
 
     private PanelUser requireUser(Request request, PanelPermission permission) {
@@ -521,6 +833,30 @@ public final class WebPanelServer {
     }
 
     private record CommandDispatchResult(boolean dispatched, String response) {
+    }
+
+    private record KickPayload(String reason) {
+    }
+
+    private record TempBanPayload(String username, Integer durationMinutes, String reason) {
+    }
+
+    private record BanPayload(String username, String uuid, String reason) {
+    }
+
+    private record UnbanPayload(String username, String uuid) {
+    }
+
+    private record PlayerActionResult(boolean success, String username, String error) {
+    }
+
+    private record TempBanResult(boolean success, String username, long expiresAtMillis, String error) {
+    }
+
+    private record OnlinePlayerSnapshot(UUID uuid, String username) {
+    }
+
+    private record BanStatus(Long expiresAtMillis) {
     }
 }
 

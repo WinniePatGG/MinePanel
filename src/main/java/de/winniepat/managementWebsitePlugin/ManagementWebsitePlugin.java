@@ -6,12 +6,15 @@ import de.winniepat.managementWebsitePlugin.config.WebPanelConfig;
 import de.winniepat.managementWebsitePlugin.logs.ChatCaptureListener;
 import de.winniepat.managementWebsitePlugin.logs.CommandCaptureListener;
 import de.winniepat.managementWebsitePlugin.logs.PanelLogger;
+import de.winniepat.managementWebsitePlugin.logs.PlayerSeenListener;
 import de.winniepat.managementWebsitePlugin.logs.ServerLogService;
 import de.winniepat.managementWebsitePlugin.persistence.Database;
+import de.winniepat.managementWebsitePlugin.persistence.KnownPlayerRepository;
 import de.winniepat.managementWebsitePlugin.persistence.LogRepository;
 import de.winniepat.managementWebsitePlugin.persistence.UserRepository;
 import de.winniepat.managementWebsitePlugin.web.BootstrapService;
 import de.winniepat.managementWebsitePlugin.web.WebPanelServer;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.nio.file.Path;
@@ -33,6 +36,7 @@ public final class ManagementWebsitePlugin extends JavaPlugin {
 
         UserRepository userRepository = new UserRepository(database);
         LogRepository logRepository = new LogRepository(database);
+        KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
         SessionService sessionService = new SessionService(database, panelConfig.sessionTtlMinutes());
         PasswordHasher passwordHasher = new PasswordHasher();
         PanelLogger panelLogger = new PanelLogger(getLogger(), logRepository, panelLogDirectory);
@@ -49,6 +53,16 @@ public final class ManagementWebsitePlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
+        getServer().getPluginManager().registerEvents(new PlayerSeenListener(knownPlayerRepository), this);
+
+        for (OfflinePlayer offlinePlayer : getServer().getOfflinePlayers()) {
+            if (offlinePlayer.getName() != null) {
+                knownPlayerRepository.upsert(offlinePlayer.getUniqueId(), offlinePlayer.getName());
+            }
+        }
+        getServer().getOnlinePlayers().forEach(player ->
+                knownPlayerRepository.upsert(player.getUniqueId(), player.getName())
+        );
 
         this.webPanelServer = new WebPanelServer(
                 this,
@@ -57,6 +71,7 @@ public final class ManagementWebsitePlugin extends JavaPlugin {
                 sessionService,
                 passwordHasher,
                 logRepository,
+                knownPlayerRepository,
                 panelLogger,
                 serverLogService,
                 bootstrapService

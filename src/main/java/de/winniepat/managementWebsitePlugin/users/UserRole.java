@@ -6,7 +6,7 @@ import java.util.Set;
 
 public enum UserRole {
     OWNER(EnumSet.allOf(PanelPermission.class)),
-    ADMIN(EnumSet.of(PanelPermission.VIEW_DASHBOARD, PanelPermission.VIEW_LOGS, PanelPermission.SEND_CONSOLE, PanelPermission.MANAGE_USERS)),
+    ADMIN(EnumSet.of(PanelPermission.VIEW_DASHBOARD, PanelPermission.VIEW_LOGS, PanelPermission.SEND_CONSOLE, PanelPermission.MANAGE_PLAYERS, PanelPermission.MANAGE_USERS)),
     VIEWER(EnumSet.of(PanelPermission.VIEW_DASHBOARD, PanelPermission.VIEW_LOGS));
 
     private final Set<PanelPermission> permissions;

@@ -47,6 +47,12 @@ public final class Database {
                     + "message TEXT NOT NULL,"
                     + "created_at INTEGER NOT NULL"
                     + ")");
+
+            statement.execute("CREATE TABLE IF NOT EXISTS known_players ("
+                    + "uuid TEXT PRIMARY KEY,"
+                    + "username TEXT NOT NULL,"
+                    + "last_seen_at INTEGER NOT NULL"
+                    + ")");
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not initialize database", exception);
         }

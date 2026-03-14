@@ -1,32 +1,18 @@
 package de.winniepat.minePanel;
 
-import de.winniepat.minePanel.auth.PasswordHasher;
-import de.winniepat.minePanel.auth.SessionService;
+import de.winniepat.minePanel.auth.*;
 import de.winniepat.minePanel.config.WebPanelConfig;
-import de.winniepat.minePanel.integrations.DiscordWebhookRepository;
-import de.winniepat.minePanel.integrations.DiscordWebhookService;
-import de.winniepat.minePanel.logs.ChatCaptureListener;
-import de.winniepat.minePanel.logs.CommandCaptureListener;
-import de.winniepat.minePanel.logs.PanelLogger;
-import de.winniepat.minePanel.logs.PlayerActivityListener;
-import de.winniepat.minePanel.logs.ServerLogService;
-import de.winniepat.minePanel.persistence.Database;
-import de.winniepat.minePanel.persistence.KnownPlayerRepository;
-import de.winniepat.minePanel.persistence.LogRepository;
-import de.winniepat.minePanel.persistence.PlayerActivityRepository;
-import de.winniepat.minePanel.persistence.UserRepository;
-import de.winniepat.minePanel.web.BootstrapService;
-import de.winniepat.minePanel.web.WebPanelServer;
+import de.winniepat.minePanel.integrations.*;
+import de.winniepat.minePanel.logs.*;
+import de.winniepat.minePanel.persistence.*;
+import de.winniepat.minePanel.web.*;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.time.Instant;
-import java.time.ZoneOffset;
+import java.nio.file.*;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
 
 public final class MinePanel extends JavaPlugin {

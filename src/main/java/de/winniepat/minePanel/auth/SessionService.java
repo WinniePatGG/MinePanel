@@ -3,13 +3,9 @@ package de.winniepat.minePanel.auth;
 import de.winniepat.minePanel.persistence.Database;
 
 import java.security.SecureRandom;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.Optional;
+import java.util.*;
 
 public final class SessionService {
 

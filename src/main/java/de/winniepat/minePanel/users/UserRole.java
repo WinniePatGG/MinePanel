@@ -1,8 +1,6 @@
 package de.winniepat.minePanel.users;
 
-import java.util.EnumSet;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 public enum UserRole {
     OWNER(EnumSet.allOf(PanelPermission.class)),

@@ -3,8 +3,7 @@ package de.winniepat.minePanel.web;
 import de.winniepat.minePanel.persistence.UserRepository;
 
 import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.Optional;
+import java.util.*;
 
 public final class BootstrapService {
 

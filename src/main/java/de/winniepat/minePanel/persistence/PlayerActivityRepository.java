@@ -1,13 +1,7 @@
 package de.winniepat.minePanel.persistence;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.sql.*;
+import java.util.*;
 
 public final class PlayerActivityRepository {
 

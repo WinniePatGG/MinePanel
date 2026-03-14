@@ -1,11 +1,7 @@
 package de.winniepat.minePanel.persistence;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.nio.file.*;
+import java.sql.*;
 
 public final class Database {
 

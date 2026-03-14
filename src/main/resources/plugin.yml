@@ -1,0 +1,7 @@
+name: ManagementWebsitePlugin
+version: '${version}'
+main: de.winniepat.managementWebsitePlugin.ManagementWebsitePlugin
+api-version: '1.21'
+authors: [ WinniePatGG ]
+website: https://winniepat.de
+description: Embedded management panel with secure auth, user roles, and log history.

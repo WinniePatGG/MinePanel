@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Panel Setup</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<main class="page-center">
+    <section class="card stack">
+        <h1>First Launch Setup</h1>
+        <p>Use the bootstrap token printed in the server console to create the owner account.</p>
+        <div id="error" class="error"></div>
+        <div class="label">Bootstrap Token</div>
+        <input id="token" placeholder="Bootstrap token">
+        <div class="label">Owner Username</div>
+        <input id="username" placeholder="Owner username">
+        <div class="label">Owner Password</div>
+        <input id="password" type="password" placeholder="Owner password (min 10 chars)">
+        <button id="create">Create Owner Account</button>
+    </section>
+</main>
+<script>
+    const error = document.getElementById('error');
+    document.getElementById('create').addEventListener('click', async () => {
+        error.textContent = '';
+        const res = await fetch('/api/bootstrap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: document.getElementById('token').value,
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            error.textContent = data.error || 'Setup failed';
+            return;
+        }
+        window.location.href = '/dashboard';
+    });
+</script>
+</body>
+</html>
+

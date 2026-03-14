@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Management Dashboard</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">Winnie Panel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link active" href="/dashboard/console">Console</a>
+            <a class="side-link" href="/dashboard/users">Users</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Console</h1>
+        <div class="toolbar">
+            <button id="refresh" class="secondary">Refresh Logs</button>
+        </div>
+
+        <section class="card">
+            <h2>Panel Logs + Chat + Commands</h2>
+            <pre id="panelLogs" class="log-rectangle"></pre>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Players Online: <span id="playerCount">0</span></h2>
+            <ul id="playerList" class="player-list"></ul>
+        </section>
+    </main>
+</div>
+
+<script>
+    let latestPanelLogId = 0;
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function loadLogs() {
+        const data = await api('/api/logs?limit=250');
+        const panelLogsElement = document.getElementById('panelLogs');
+
+        panelLogsElement.textContent = [...data.panelLogs]
+            .reverse()
+            .map(x => `[${new Date(x.createdAt).toISOString()}] [${x.kind}] [${x.source}] ${x.message}`)
+            .join('\n');
+
+        if (data.panelLogs.length > 0) {
+            latestPanelLogId = Math.max(latestPanelLogId, ...data.panelLogs.map(x => x.id));
+        }
+
+        panelLogsElement.scrollTop = panelLogsElement.scrollHeight;
+    }
+
+    async function watchForNewLogs() {
+        const data = await api('/api/logs/latest');
+        if (data.latestId > latestPanelLogId) {
+            await loadLogs();
+        }
+    }
+
+    async function loadPlayers() {
+        const data = await api('/api/players');
+        const playerCount = document.getElementById('playerCount');
+        const playerList = document.getElementById('playerList');
+
+        playerCount.textContent = data.count ?? 0;
+        playerList.innerHTML = '';
+
+        if (!Array.isArray(data.players) || data.players.length === 0) {
+            const emptyItem = document.createElement('li');
+            emptyItem.className = 'player-empty';
+            emptyItem.textContent = 'No players online';
+            playerList.appendChild(emptyItem);
+            return;
+        }
+
+        data.players.forEach(player => {
+            const item = document.createElement('li');
+            item.className = 'player-item';
+
+            const avatar = document.createElement('img');
+            avatar.className = 'player-avatar';
+            avatar.alt = `${player.username} skin face`;
+            avatar.referrerPolicy = 'no-referrer';
+            avatar.src = `https://crafatar.com/avatars/${player.uuid}?size=32&overlay`;
+            avatar.onerror = () => {
+                if (!avatar.dataset.fallbackTried) {
+                    avatar.dataset.fallbackTried = '1';
+                    avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(player.username)}/32`;
+                    return;
+                }
+                avatar.onerror = null;
+                avatar.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="%23131f38"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="14" fill="%23a9bbdf">?</text></svg>';
+            };
+
+            const name = document.createElement('span');
+            name.className = 'player-name';
+            name.textContent = player.username;
+
+            item.appendChild(avatar);
+            item.appendChild(name);
+            playerList.appendChild(item);
+        });
+    }
+
+    document.getElementById('refresh').addEventListener('click', async () => {
+        await loadLogs();
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+
+    (async () => {
+        try {
+            await loadMe();
+            await Promise.all([loadLogs(), loadPlayers()]);
+            setInterval(() => {
+                watchForNewLogs().catch(() => {});
+            }, 1000);
+            setInterval(() => {
+                loadPlayers().catch(() => {});
+            }, 2000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

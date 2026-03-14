@@ -1,0 +1,63 @@
+package de.winniepat.managementWebsitePlugin.persistence;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+public final class Database {
+
+    private final Path databaseFile;
+
+    public Database(Path databaseFile) {
+        this.databaseFile = databaseFile;
+    }
+
+    public void initialize() {
+        try {
+            Files.createDirectories(databaseFile.getParent());
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not create database directory", exception);
+        }
+
+        try (Connection connection = getConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE IF NOT EXISTS users ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "username TEXT NOT NULL UNIQUE,"
+                    + "password_hash TEXT NOT NULL,"
+                    + "role TEXT NOT NULL,"
+                    + "created_at INTEGER NOT NULL"
+                    + ")");
+
+            statement.execute("CREATE TABLE IF NOT EXISTS sessions ("
+                    + "token TEXT PRIMARY KEY,"
+                    + "user_id INTEGER NOT NULL,"
+                    + "created_at INTEGER NOT NULL,"
+                    + "expires_at INTEGER NOT NULL,"
+                    + "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+                    + ")");
+
+            statement.execute("CREATE TABLE IF NOT EXISTS panel_logs ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "kind TEXT NOT NULL,"
+                    + "source TEXT NOT NULL,"
+                    + "message TEXT NOT NULL,"
+                    + "created_at INTEGER NOT NULL"
+                    + ")");
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not initialize database", exception);
+        }
+    }
+
+    public Connection getConnection() throws SQLException {
+        return DriverManager.getConnection("jdbc:sqlite:" + databaseFile.toAbsolutePath());
+    }
+
+    public void close() {
+        // sqlite connections are short-lived and closed per operation
+    }
+}
+

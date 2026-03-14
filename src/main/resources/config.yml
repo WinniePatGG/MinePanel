@@ -1,0 +1,11 @@
+web:
+  host: 127.0.0.1
+  port: 8080
+  sessionTtlMinutes: 120
+
+security:
+  bootstrapTokenLength: 32
+
+logging:
+  separateDirectory: panel-logs
+

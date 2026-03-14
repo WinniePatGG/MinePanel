@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Management Dashboard - Users</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">Winnie Panel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/console">Console</a>
+            <a class="side-link active" href="/dashboard/users">Users</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Users</h1>
+        <section class="card spaced-top">
+            <h2>User Management</h2>
+            <div class="inline-form">
+                <input id="newUsername" placeholder="Username">
+                <input id="newPassword" type="password" placeholder="Password">
+                <select id="newRole">
+                    <option>VIEWER</option>
+                    <option>ADMIN</option>
+                    <option>OWNER</option>
+                </select>
+                <button id="createUser">Create User</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Action</th></tr></thead>
+                    <tbody id="users"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function loadUsers() {
+        const data = await api('/api/users');
+        const tbody = document.getElementById('users');
+        tbody.innerHTML = '';
+        data.users.forEach(user => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${user.id}</td><td>${user.username}</td><td>
+                <select data-id="${user.id}">
+                    ${['VIEWER','ADMIN','OWNER'].map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                </select>
+            </td><td><button data-save="${user.id}">Save</button></td>`;
+            tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('button[data-save]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const id = button.getAttribute('data-save');
+                const role = tbody.querySelector(`select[data-id="${id}"]`).value;
+                await api(`/api/users/${id}/role`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role })
+                });
+                await loadUsers();
+            });
+        });
+    }
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    document.getElementById('createUser').addEventListener('click', async () => {
+        await api('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: document.getElementById('newUsername').value,
+                password: document.getElementById('newPassword').value,
+                role: document.getElementById('newRole').value
+            })
+        });
+        document.getElementById('newPassword').value = '';
+        await loadUsers();
+    });
+
+    (async () => {
+        try {
+            await loadMe();
+            await loadUsers();
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

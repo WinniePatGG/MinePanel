@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MinePanel Dashboard</title>
+    <title>MinePanel Console</title>
     <link rel="stylesheet" href="/panel.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
         <div id="me" class="sidebar-meta"></div>
         <nav class="side-nav">
             <a class="side-link" href="/dashboard/overview">Overview</a>
-            <a class="side-link active" href="/dashboard/console">Console</a>
+            <a class="side-link active" href="/console">Console</a>
             <a class="side-link" href="/dashboard/players">Players</a>
             <a class="side-link" href="/dashboard/bans">Bans</a>
             <a class="side-link" href="/dashboard/users">Users</a>
@@ -36,17 +36,11 @@
                 <button id="sendConsole">Send</button>
             </div>
         </section>
-
-        <section class="card spaced-top">
-            <h2>Players Online: <span id="playerCount">0</span></h2>
-            <ul id="playerList" class="player-list"></ul>
-        </section>
     </main>
 </div>
 
 <script>
     let latestPanelLogId = 0;
-    const playerNodeCache = new Map();
 
     async function api(url, options) {
         const res = await fetch(url, options);
@@ -81,70 +75,6 @@
         if (data.latestId > latestPanelLogId) {
             await loadLogs();
         }
-    }
-
-    async function loadPlayers() {
-        const data = await api('/api/players');
-        const playerCount = document.getElementById('playerCount');
-        const playerList = document.getElementById('playerList');
-
-        playerCount.textContent = data.count ?? 0;
-
-        if (!Array.isArray(data.players) || data.players.length === 0) {
-            playerNodeCache.clear();
-            const emptyItem = document.createElement('li');
-            emptyItem.className = 'player-empty';
-            emptyItem.textContent = 'No players online';
-            playerList.replaceChildren(emptyItem);
-            return;
-        }
-
-        const incomingKeys = new Set();
-        const orderedNodes = [];
-
-        data.players.forEach(player => {
-            const key = `${player.uuid}:${player.username}`;
-            incomingKeys.add(key);
-
-            let item = playerNodeCache.get(key);
-            if (!item) {
-                item = document.createElement('li');
-                item.className = 'player-item';
-
-                const avatar = document.createElement('img');
-                avatar.className = 'player-avatar';
-                avatar.alt = `${player.username} skin face`;
-                avatar.referrerPolicy = 'no-referrer';
-                avatar.src = `https://crafatar.com/avatars/${player.uuid}?size=32&overlay`;
-                avatar.onerror = () => {
-                    if (!avatar.dataset.fallbackTried) {
-                        avatar.dataset.fallbackTried = '1';
-                        avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(player.username)}/32`;
-                        return;
-                    }
-                    avatar.onerror = null;
-                    avatar.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="%23131f38"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="14" fill="%23a9bbdf">?</text></svg>';
-                };
-
-                const name = document.createElement('span');
-                name.className = 'player-name';
-                name.textContent = player.username;
-
-                item.appendChild(avatar);
-                item.appendChild(name);
-                playerNodeCache.set(key, item);
-            }
-
-            orderedNodes.push(item);
-        });
-
-        for (const key of [...playerNodeCache.keys()]) {
-            if (!incomingKeys.has(key)) {
-                playerNodeCache.delete(key);
-            }
-        }
-
-        playerList.replaceChildren(...orderedNodes);
     }
 
     async function sendConsoleMessage() {
@@ -188,13 +118,10 @@
     (async () => {
         try {
             await loadMe();
-            await Promise.all([loadLogs(), loadPlayers()]);
+            await loadLogs();
             setInterval(() => {
                 watchForNewLogs().catch(() => {});
             }, 1000);
-            setInterval(() => {
-                loadPlayers().catch(() => {});
-            }, 2000);
         } catch {
             window.location.href = '/';
         }
@@ -202,4 +129,6 @@
 </script>
 </body>
 </html>
+
+
 

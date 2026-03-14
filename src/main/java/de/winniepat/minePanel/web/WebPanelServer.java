@@ -125,9 +125,14 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-overview.html");
         });
 
+        get("/console", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-console.html");
+        });
+
         get("/dashboard/console", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard.html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-console.html");
         });
 
         get("/dashboard/users", (request, response) -> {

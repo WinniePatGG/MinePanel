@@ -324,9 +324,11 @@ public final class WebPanelServer {
         }
 
         Map<String, Object> current = new HashMap<>();
+        double memoryMaxMb = Runtime.getRuntime().maxMemory() / (1024.0 * 1024.0);
         current.put("tps", latest == null ? -1.0 : latest.tps());
         current.put("memoryPercent", latest == null ? 0.0 : latest.memoryPercent());
         current.put("memoryUsedMb", latest == null ? 0.0 : latest.memoryUsedMb());
+        current.put("memoryMaxMb", Math.max(0.0, memoryMaxMb));
         current.put("cpuPercent", latest == null ? -1.0 : latest.cpuPercent());
 
         Map<String, Object> history = new HashMap<>();

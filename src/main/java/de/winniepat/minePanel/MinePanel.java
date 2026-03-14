@@ -9,11 +9,14 @@ import de.winniepat.minePanel.web.*;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.lang.reflect.Method;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class MinePanel extends JavaPlugin {
 
@@ -26,12 +29,33 @@ public final class MinePanel extends JavaPlugin {
     private PanelLogger panelLogger;
     private PlayerActivityRepository playerActivityRepository;
 
+    private record StartupContext(
+            UserRepository userRepository,
+            KnownPlayerRepository knownPlayerRepository,
+            SessionService sessionService,
+            PasswordHasher passwordHasher,
+            ServerLogService serverLogService,
+            BootstrapService bootstrapService
+    ) {}
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        configureThirdPartyStartupLogging();
 
         WebPanelConfig panelConfig = WebPanelConfig.fromConfig(getConfig());
+        StartupContext startupContext = initializeStartupContext(panelConfig);
 
+        announceBootstrapToken(startupContext.bootstrapService());
+        registerPluginListeners(startupContext.knownPlayerRepository());
+        synchronizeKnownPlayers(startupContext.knownPlayerRepository());
+        startWebPanel(panelConfig, startupContext);
+
+        getLogger().info("MinePanel available at http://" + panelConfig.host() + ":" + panelConfig.port());
+        panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin started");
+    }
+
+    private StartupContext initializeStartupContext(WebPanelConfig panelConfig) {
         this.database = new Database(getDataFolder().toPath().resolve("panel.db"));
         this.database.initialize();
 
@@ -39,28 +63,42 @@ public final class MinePanel extends JavaPlugin {
         this.logRepository = new LogRepository(database);
         KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
         this.playerActivityRepository = new PlayerActivityRepository(database);
+
         DiscordWebhookRepository discordWebhookRepository = new DiscordWebhookRepository(database);
         this.discordWebhookService = new DiscordWebhookService(getLogger(), discordWebhookRepository);
+        this.panelLogger = new PanelLogger(logRepository, discordWebhookService);
+        this.logRepository.clearLogs();
+
         SessionService sessionService = new SessionService(database, panelConfig.sessionTtlMinutes());
         PasswordHasher passwordHasher = new PasswordHasher();
-        this.panelLogger = new PanelLogger(logRepository, discordWebhookService);
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
 
-        logRepository.clearLogs();
-
-        bootstrapService.getBootstrapToken().ifPresent(token -> {
-                getLogger().warning("--------------------------------------------------------");
-                getLogger().warning("First launch setup token: " + token);
-                getLogger().warning("--------------------------------------------------------");
-
-                }
+        return new StartupContext(
+                userRepository,
+                knownPlayerRepository,
+                sessionService,
+                passwordHasher,
+                serverLogService,
+                bootstrapService
         );
+    }
 
+    private void announceBootstrapToken(BootstrapService bootstrapService) {
+        bootstrapService.getBootstrapToken().ifPresent(token -> {
+            getLogger().warning("--------------------------------------------------------");
+            getLogger().warning("First launch setup token: " + token);
+            getLogger().warning("--------------------------------------------------------");
+        });
+    }
+
+    private void registerPluginListeners(KnownPlayerRepository knownPlayerRepository) {
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository), this);
+    }
 
+    private void synchronizeKnownPlayers(KnownPlayerRepository knownPlayerRepository) {
         for (OfflinePlayer offlinePlayer : getServer().getOfflinePlayers()) {
             if (offlinePlayer.getName() != null) {
                 knownPlayerRepository.upsert(offlinePlayer.getUniqueId(), offlinePlayer.getName());
@@ -71,36 +109,58 @@ public final class MinePanel extends JavaPlugin {
                 );
             }
         }
-        getServer().getOnlinePlayers().forEach(player ->
-                {
-                    knownPlayerRepository.upsert(player.getUniqueId(), player.getName());
-                    long now = Instant.now().toEpochMilli();
-                    playerActivityRepository.onJoin(player.getUniqueId(), now,
-                            player.getAddress() != null && player.getAddress().getAddress() != null
-                                    ? player.getAddress().getAddress().getHostAddress()
-                                    : "");
-                }
-        );
 
+        getServer().getOnlinePlayers().forEach(player -> {
+            knownPlayerRepository.upsert(player.getUniqueId(), player.getName());
+            long now = Instant.now().toEpochMilli();
+            playerActivityRepository.onJoin(
+                    player.getUniqueId(),
+                    now,
+                    player.getAddress() != null && player.getAddress().getAddress() != null
+                            ? player.getAddress().getAddress().getHostAddress()
+                            : ""
+            );
+        });
+    }
+
+    private void startWebPanel(WebPanelConfig panelConfig, StartupContext startupContext) {
         this.webPanelServer = new WebPanelServer(
                 this,
                 panelConfig,
-                userRepository,
-                sessionService,
-                passwordHasher,
+                startupContext.userRepository(),
+                startupContext.sessionService(),
+                startupContext.passwordHasher(),
                 this.logRepository,
-                knownPlayerRepository,
+                startupContext.knownPlayerRepository(),
                 playerActivityRepository,
                 discordWebhookService,
                 panelLogger,
-                serverLogService,
-                bootstrapService
+                startupContext.serverLogService(),
+                startupContext.bootstrapService()
         );
         this.webPanelServer.start();
+    }
 
-        getLogger().info("MinePanel available at http://" + panelConfig.host() + ":" + panelConfig.port());
-        panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin started");
+    private void configureThirdPartyStartupLogging() {
+        System.setProperty("org.eclipse.jetty.util.log.announce", "false");
+        System.setProperty("org.eclipse.jetty.LEVEL", "WARN");
 
+        Logger.getLogger("spark").setLevel(Level.WARNING);
+        Logger.getLogger("org.eclipse.jetty").setLevel(Level.WARNING);
+        Logger.getLogger("org.eclipse.jetty.util.log").setLevel(Level.WARNING);
+
+        try {
+            Class<?> levelClass = Class.forName("org.apache.logging.log4j.Level");
+            Class<?> configuratorClass = Class.forName("org.apache.logging.log4j.core.config.Configurator");
+            Method setLevelMethod = configuratorClass.getMethod("setLevel", String.class, levelClass);
+            Object warnLevel = levelClass.getField("WARN").get(null);
+
+            setLevelMethod.invoke(null, "spark", warnLevel);
+            setLevelMethod.invoke(null, "org.eclipse.jetty", warnLevel);
+            setLevelMethod.invoke(null, "org.eclipse.jetty.util.log", warnLevel);
+        } catch (ReflectiveOperationException ignored) {
+
+        }
     }
 
     @Override

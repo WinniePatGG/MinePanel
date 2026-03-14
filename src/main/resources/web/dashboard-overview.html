@@ -41,7 +41,7 @@
             </div>
             <div class="card stat-card">
                 <div class="stat-label">Memory Usage</div>
-                <div id="statMemory" class="stat-value">0.0% (0 MB)</div>
+                <div id="statMemory" class="stat-value">0 MB / 0 MB</div>
             </div>
             <div class="card stat-card">
                 <div class="stat-label">CPU Usage</div>
@@ -135,8 +135,8 @@
 
     function updateTopMetrics(current) {
         const tps = Number(current.tps);
-        const memoryPercent = Number(current.memoryPercent);
         const memoryUsedMb = Number(current.memoryUsedMb);
+        const memoryMaxMb = Number(current.memoryMaxMb);
         const cpuPercent = Number(current.cpuPercent);
 
         if (Number.isFinite(tps) && tps >= 0) {
@@ -145,8 +145,8 @@
             document.getElementById('statTps').textContent = '-';
         }
 
-        document.getElementById('statMemory').textContent = Number.isFinite(memoryPercent)
-            ? `${memoryPercent.toFixed(1)}% (${Math.max(0, memoryUsedMb || 0).toFixed(0)} MB)`
+        document.getElementById('statMemory').textContent = Number.isFinite(memoryUsedMb) && Number.isFinite(memoryMaxMb) && memoryMaxMb > 0
+            ? `${Math.max(0, memoryUsedMb).toFixed(0)} MB / ${Math.max(0, memoryMaxMb).toFixed(0)} MB`
             : 'Unavailable';
 
         document.getElementById('statCpu').textContent = Number.isFinite(cpuPercent) && cpuPercent >= 0

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Discord Webhook</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <a class="side-link" href="/console">Console</a>
+            <a class="side-link" href="/dashboard/players">Players</a>
+            <a class="side-link" href="/dashboard/bans">Bans</a>
+            <a class="side-link" href="/dashboard/users">Users</a>
+            <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            <a class="side-link active" href="/dashboard/discord-webhook">Discord Webhook</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Discord Webhook</h1>
+        <p>Configure what MinePanel sends to your Discord channel.</p>
+
+        <section class="card spaced-top">
+            <h2>Webhook Settings</h2>
+            <div class="integration-form">
+                <label class="label checkbox-line">
+                    <input id="enabled" type="checkbox">
+                    Enable Discord webhook logging
+                </label>
+
+                <div class="label">Webhook URL</div>
+                <input id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
+
+                <div class="label">Bot Name</div>
+                <input id="botName" placeholder="MinePanel">
+
+                <label class="label checkbox-line">
+                    <input id="useEmbed" type="checkbox">
+                    Send as embed
+                </label>
+
+                <div class="label">Message Template</div>
+                <input id="messageTemplate" placeholder="[{timestamp}] [{kind}] [{source}] {message}">
+
+                <div class="label">Embed Title Template</div>
+                <input id="embedTitleTemplate" placeholder="MinePanel {kind}">
+
+                <div class="label">Event Filters</div>
+                <div class="toggle-grid">
+                    <label class="checkbox-line"><input id="logChat" type="checkbox">Chat</label>
+                    <label class="checkbox-line"><input id="logCommands" type="checkbox">Commands</label>
+                    <label class="checkbox-line"><input id="logAuth" type="checkbox">Auth</label>
+                    <label class="checkbox-line"><input id="logAudit" type="checkbox">Audit</label>
+                    <label class="checkbox-line"><input id="logConsoleResponse" type="checkbox">Console Response</label>
+                    <label class="checkbox-line"><input id="logSystem" type="checkbox">System</label>
+                </div>
+
+                <button id="saveWebhook">Save Webhook Settings</button>
+                <p id="webhookStatus" class="action-status"></p>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Template Variables</h2>
+            <p class="template-help">Use <code>{timestamp}</code>, <code>{kind}</code>, <code>{source}</code>, and <code>{message}</code> in your templates.</p>
+        </section>
+    </main>
+</div>
+
+<script>
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    function setStatus(message, isError) {
+        const status = document.getElementById('webhookStatus');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function applyConfig(config) {
+        document.getElementById('enabled').checked = !!config.enabled;
+        document.getElementById('webhookUrl').value = config.webhookUrl || '';
+        document.getElementById('useEmbed').checked = !!config.useEmbed;
+        document.getElementById('botName').value = config.botName || '';
+        document.getElementById('messageTemplate').value = config.messageTemplate || '';
+        document.getElementById('embedTitleTemplate').value = config.embedTitleTemplate || '';
+        document.getElementById('logChat').checked = !!config.logChat;
+        document.getElementById('logCommands').checked = !!config.logCommands;
+        document.getElementById('logAuth').checked = !!config.logAuth;
+        document.getElementById('logAudit').checked = !!config.logAudit;
+        document.getElementById('logConsoleResponse').checked = !!config.logConsoleResponse;
+        document.getElementById('logSystem').checked = !!config.logSystem;
+    }
+
+    function collectConfig() {
+        return {
+            enabled: document.getElementById('enabled').checked,
+            webhookUrl: document.getElementById('webhookUrl').value,
+            useEmbed: document.getElementById('useEmbed').checked,
+            botName: document.getElementById('botName').value,
+            messageTemplate: document.getElementById('messageTemplate').value,
+            embedTitleTemplate: document.getElementById('embedTitleTemplate').value,
+            logChat: document.getElementById('logChat').checked,
+            logCommands: document.getElementById('logCommands').checked,
+            logAuth: document.getElementById('logAuth').checked,
+            logAudit: document.getElementById('logAudit').checked,
+            logConsoleResponse: document.getElementById('logConsoleResponse').checked,
+            logSystem: document.getElementById('logSystem').checked
+        };
+    }
+
+    async function loadWebhookConfig() {
+        const config = await api('/api/integrations/discord-webhook');
+        applyConfig(config);
+    }
+
+    async function saveWebhookConfig() {
+        const payload = collectConfig();
+        const response = await api('/api/integrations/discord-webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        applyConfig(response.config);
+    }
+
+    document.getElementById('saveWebhook').addEventListener('click', async () => {
+        try {
+            await saveWebhookConfig();
+            setStatus('Webhook settings saved', false);
+        } catch (error) {
+            setStatus(`Save failed: ${error.message}`, true);
+        }
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            await Promise.all([loadMe(), loadWebhookConfig()]);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

@@ -5,6 +5,8 @@ import de.winniepat.minePanel.MinePanel;
 import de.winniepat.minePanel.auth.PasswordHasher;
 import de.winniepat.minePanel.auth.SessionService;
 import de.winniepat.minePanel.config.WebPanelConfig;
+import de.winniepat.minePanel.integrations.DiscordWebhookConfig;
+import de.winniepat.minePanel.integrations.DiscordWebhookService;
 import de.winniepat.minePanel.logs.PanelLogEntry;
 import de.winniepat.minePanel.logs.PanelLogger;
 import de.winniepat.minePanel.logs.ServerLogService;
@@ -60,6 +62,7 @@ public final class WebPanelServer {
     private final PasswordHasher passwordHasher;
     private final LogRepository logRepository;
     private final KnownPlayerRepository knownPlayerRepository;
+    private final DiscordWebhookService discordWebhookService;
     private final PanelLogger panelLogger;
     private final ServerLogService serverLogService;
     private final BootstrapService bootstrapService;
@@ -73,6 +76,7 @@ public final class WebPanelServer {
             PasswordHasher passwordHasher,
             LogRepository logRepository,
             KnownPlayerRepository knownPlayerRepository,
+            DiscordWebhookService discordWebhookService,
             PanelLogger panelLogger,
             ServerLogService serverLogService,
             BootstrapService bootstrapService
@@ -84,6 +88,7 @@ public final class WebPanelServer {
         this.passwordHasher = passwordHasher;
         this.logRepository = logRepository;
         this.knownPlayerRepository = knownPlayerRepository;
+        this.discordWebhookService = discordWebhookService;
         this.panelLogger = panelLogger;
         this.serverLogService = serverLogService;
         this.bootstrapService = bootstrapService;
@@ -160,6 +165,11 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-players.html");
         });
 
+        get("/dashboard/discord-webhook", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-discord-webhook.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return ResourceLoader.loadUtf8Text("/web/panel.css");
@@ -188,6 +198,8 @@ public final class WebPanelServer {
             post("/players/ban", (request, response) -> handleBanPlayer(request, response));
             post("/players/unban", (request, response) -> handleUnbanPlayer(request, response));
             post("/console/send", (request, response) -> handleSendConsole(request, response));
+            get("/integrations/discord-webhook", (request, response) -> handleGetDiscordWebhook(request, response));
+            post("/integrations/discord-webhook", (request, response) -> handleSaveDiscordWebhook(request, response));
         });
 
         awaitInitialization();
@@ -425,6 +437,45 @@ public final class WebPanelServer {
                 "count", plugins.size(),
                 "plugins", plugins
         ));
+    }
+
+    private String handleGetDiscordWebhook(Request request, Response response) {
+        requireUser(request, PanelPermission.MANAGE_USERS);
+        return json(response, 200, toWebhookPayload(discordWebhookService.getConfig()));
+    }
+
+    private String handleSaveDiscordWebhook(Request request, Response response) {
+        requireUser(request, PanelPermission.MANAGE_USERS);
+
+        DiscordWebhookPayload payload = gson.fromJson(request.body(), DiscordWebhookPayload.class);
+        if (payload == null) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        DiscordWebhookConfig previous = discordWebhookService.getConfig();
+        String webhookUrl = normalizeWebhookUrl(payload.webhookUrl(), previous.webhookUrl());
+        if (payload.enabled() != null && payload.enabled() && webhookUrl.isBlank()) {
+            return json(response, 400, Map.of("error", "webhook_url_required"));
+        }
+
+        DiscordWebhookConfig updated = new DiscordWebhookConfig(
+                payload.enabled() == null ? previous.enabled() : payload.enabled(),
+                webhookUrl,
+                payload.useEmbed() == null ? previous.useEmbed() : payload.useEmbed(),
+                normalizeSimpleText(payload.botName(), previous.botName(), 80),
+                normalizeSimpleText(payload.messageTemplate(), previous.messageTemplate(), 600),
+                normalizeSimpleText(payload.embedTitleTemplate(), previous.embedTitleTemplate(), 120),
+                payload.logChat() == null ? previous.logChat() : payload.logChat(),
+                payload.logCommands() == null ? previous.logCommands() : payload.logCommands(),
+                payload.logAuth() == null ? previous.logAuth() : payload.logAuth(),
+                payload.logAudit() == null ? previous.logAudit() : payload.logAudit(),
+                payload.logConsoleResponse() == null ? previous.logConsoleResponse() : payload.logConsoleResponse(),
+                payload.logSystem() == null ? previous.logSystem() : payload.logSystem()
+        );
+
+        discordWebhookService.updateConfig(updated);
+        panelLogger.log("AUDIT", "WEBHOOK", "Discord webhook configuration updated");
+        return json(response, 200, Map.of("ok", true, "config", toWebhookPayload(updated)));
     }
 
     private String handleKickPlayer(Request request, Response response) {
@@ -755,6 +806,51 @@ public final class WebPanelServer {
         }
     }
 
+    private Map<String, Object> toWebhookPayload(DiscordWebhookConfig config) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("enabled", config.enabled());
+        payload.put("webhookUrl", config.webhookUrl());
+        payload.put("useEmbed", config.useEmbed());
+        payload.put("botName", config.botName());
+        payload.put("messageTemplate", config.messageTemplate());
+        payload.put("embedTitleTemplate", config.embedTitleTemplate());
+        payload.put("logChat", config.logChat());
+        payload.put("logCommands", config.logCommands());
+        payload.put("logAuth", config.logAuth());
+        payload.put("logAudit", config.logAudit());
+        payload.put("logConsoleResponse", config.logConsoleResponse());
+        payload.put("logSystem", config.logSystem());
+        return payload;
+    }
+
+    private String normalizeWebhookUrl(String value, String fallback) {
+        if (value == null) {
+            return fallback == null ? "" : fallback;
+        }
+
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+
+        if (!(trimmed.startsWith("https://") || trimmed.startsWith("http://"))) {
+            return fallback == null ? "" : fallback;
+        }
+        return trimmed;
+    }
+
+    private String normalizeSimpleText(String value, String fallback, int maxLength) {
+        String raw = value == null ? fallback : value;
+        if (raw == null || raw.isBlank()) {
+            return fallback == null ? "" : fallback;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.length() <= maxLength) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLength);
+    }
+
     private String sanitizeUsername(String rawUsername) {
         if (rawUsername == null || rawUsername.isBlank()) {
             return null;
@@ -860,6 +956,22 @@ public final class WebPanelServer {
     }
 
     private record UnbanPayload(String username, String uuid) {
+    }
+
+    private record DiscordWebhookPayload(
+            Boolean enabled,
+            String webhookUrl,
+            Boolean useEmbed,
+            String botName,
+            String messageTemplate,
+            String embedTitleTemplate,
+            Boolean logChat,
+            Boolean logCommands,
+            Boolean logAuth,
+            Boolean logAudit,
+            Boolean logConsoleResponse,
+            Boolean logSystem
+    ) {
     }
 
     private record PlayerActionResult(boolean success, String username, String error) {

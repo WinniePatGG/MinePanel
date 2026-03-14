@@ -53,6 +53,22 @@ public final class Database {
                     + "username TEXT NOT NULL,"
                     + "last_seen_at INTEGER NOT NULL"
                     + ")");
+
+            statement.execute("CREATE TABLE IF NOT EXISTS discord_webhook_config ("
+                    + "id INTEGER PRIMARY KEY,"
+                    + "enabled INTEGER NOT NULL,"
+                    + "webhook_url TEXT NOT NULL,"
+                    + "use_embed INTEGER NOT NULL,"
+                    + "bot_name TEXT NOT NULL,"
+                    + "message_template TEXT NOT NULL,"
+                    + "embed_title_template TEXT NOT NULL,"
+                    + "log_chat INTEGER NOT NULL,"
+                    + "log_commands INTEGER NOT NULL,"
+                    + "log_auth INTEGER NOT NULL,"
+                    + "log_audit INTEGER NOT NULL,"
+                    + "log_console_response INTEGER NOT NULL,"
+                    + "log_system INTEGER NOT NULL"
+                    + ")");
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not initialize database", exception);
         }

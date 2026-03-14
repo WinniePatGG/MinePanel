@@ -413,6 +413,32 @@ button.secondary {
     min-height: 18px;
 }
 
+.integration-form {
+    display: grid;
+    gap: 10px;
+}
+
+.checkbox-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checkbox-line input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
+.toggle-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 1fr 1fr;
+}
+
+.template-help {
+    margin: 0;
+}
+
 .success-text {
     color: #8addba;
 }

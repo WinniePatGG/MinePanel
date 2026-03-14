@@ -1,5 +1,6 @@
 package de.winniepat.minePanel.logs;
 
+import de.winniepat.minePanel.integrations.DiscordWebhookService;
 import de.winniepat.minePanel.persistence.LogRepository;
 
 import java.io.IOException;
@@ -20,11 +21,13 @@ public final class PanelLogger {
 
     private final Logger logger;
     private final LogRepository logRepository;
+    private final DiscordWebhookService discordWebhookService;
     private final Path logDirectory;
 
-    public PanelLogger(Logger logger, LogRepository logRepository, Path logDirectory) {
+    public PanelLogger(Logger logger, LogRepository logRepository, DiscordWebhookService discordWebhookService, Path logDirectory) {
         this.logger = logger;
         this.logRepository = logRepository;
+        this.discordWebhookService = discordWebhookService;
         this.logDirectory = logDirectory;
 
         try {
@@ -35,10 +38,11 @@ public final class PanelLogger {
     }
 
     public synchronized void log(String kind, String source, String message) {
+        Instant now = Instant.now();
         String safeMessage = message == null ? "" : message;
         logRepository.appendLog(kind, source, safeMessage);
 
-        String line = Instant.now().toString() + " [" + kind + "] [" + source + "] " + safeMessage + System.lineSeparator();
+        String line = now + " [" + kind + "] [" + source + "] " + safeMessage + System.lineSeparator();
         LocalDate date = LocalDate.now(ZoneOffset.UTC);
         Path targetFile = logDirectory.resolve("panel-" + FILE_NAME_FORMAT.format(date) + ".log");
 
@@ -48,6 +52,8 @@ public final class PanelLogger {
         } catch (IOException exception) {
             logger.warning("Could not write panel log file: " + exception.getMessage());
         }
+
+        discordWebhookService.handlePanelLog(kind, source, safeMessage, now);
     }
 
     public synchronized void clearLogFiles() {

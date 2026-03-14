@@ -3,6 +3,8 @@ package de.winniepat.minePanel;
 import de.winniepat.minePanel.auth.PasswordHasher;
 import de.winniepat.minePanel.auth.SessionService;
 import de.winniepat.minePanel.config.WebPanelConfig;
+import de.winniepat.minePanel.integrations.DiscordWebhookRepository;
+import de.winniepat.minePanel.integrations.DiscordWebhookService;
 import de.winniepat.minePanel.logs.ChatCaptureListener;
 import de.winniepat.minePanel.logs.CommandCaptureListener;
 import de.winniepat.minePanel.logs.PanelLogger;
@@ -23,6 +25,7 @@ public final class MinePanel extends JavaPlugin {
 
     private Database database;
     private WebPanelServer webPanelServer;
+    private DiscordWebhookService discordWebhookService;
 
     @Override
     public void onEnable() {
@@ -37,18 +40,23 @@ public final class MinePanel extends JavaPlugin {
         UserRepository userRepository = new UserRepository(database);
         LogRepository logRepository = new LogRepository(database);
         KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
+        DiscordWebhookRepository discordWebhookRepository = new DiscordWebhookRepository(database);
+        this.discordWebhookService = new DiscordWebhookService(getLogger(), discordWebhookRepository);
         SessionService sessionService = new SessionService(database, panelConfig.sessionTtlMinutes());
         PasswordHasher passwordHasher = new PasswordHasher();
-        PanelLogger panelLogger = new PanelLogger(getLogger(), logRepository, panelLogDirectory);
+        PanelLogger panelLogger = new PanelLogger(getLogger(), logRepository, discordWebhookService, panelLogDirectory);
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
 
-        // Keep each runtime session clean by resetting panel log history on startup.
         logRepository.clearLogs();
         panelLogger.clearLogFiles();
 
-        bootstrapService.getBootstrapToken().ifPresent(token ->
-                getLogger().warning("First launch setup token: " + token + " (open /setup in the panel and use this token)")
+        bootstrapService.getBootstrapToken().ifPresent(token -> {
+                getLogger().warning("--------------------------------------------------------");
+                getLogger().warning("First launch setup token: " + token);
+                getLogger().warning("--------------------------------------------------------");
+
+                }
         );
 
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
@@ -72,6 +80,7 @@ public final class MinePanel extends JavaPlugin {
                 passwordHasher,
                 logRepository,
                 knownPlayerRepository,
+                discordWebhookService,
                 panelLogger,
                 serverLogService,
                 bootstrapService
@@ -87,6 +96,9 @@ public final class MinePanel extends JavaPlugin {
     public void onDisable() {
         if (webPanelServer != null) {
             webPanelServer.stop();
+        }
+        if (discordWebhookService != null) {
+            discordWebhookService.shutdown();
         }
         if (database != null) {
             database.close();

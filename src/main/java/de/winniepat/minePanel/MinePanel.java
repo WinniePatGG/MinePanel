@@ -19,13 +19,24 @@ import de.winniepat.minePanel.web.WebPanelServer;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 
 public final class MinePanel extends JavaPlugin {
+
+    private static final DateTimeFormatter EXPORT_FILE_NAME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
     private Database database;
     private WebPanelServer webPanelServer;
     private DiscordWebhookService discordWebhookService;
+    private LogRepository logRepository;
+    private PanelLogger panelLogger;
 
     @Override
     public void onEnable() {
@@ -38,13 +49,13 @@ public final class MinePanel extends JavaPlugin {
         this.database.initialize();
 
         UserRepository userRepository = new UserRepository(database);
-        LogRepository logRepository = new LogRepository(database);
+        this.logRepository = new LogRepository(database);
         KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
         DiscordWebhookRepository discordWebhookRepository = new DiscordWebhookRepository(database);
         this.discordWebhookService = new DiscordWebhookService(getLogger(), discordWebhookRepository);
         SessionService sessionService = new SessionService(database, panelConfig.sessionTtlMinutes());
         PasswordHasher passwordHasher = new PasswordHasher();
-        PanelLogger panelLogger = new PanelLogger(getLogger(), logRepository, discordWebhookService, panelLogDirectory);
+        this.panelLogger = new PanelLogger(getLogger(), logRepository, discordWebhookService, panelLogDirectory);
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
 
@@ -78,7 +89,7 @@ public final class MinePanel extends JavaPlugin {
                 userRepository,
                 sessionService,
                 passwordHasher,
-                logRepository,
+                this.logRepository,
                 knownPlayerRepository,
                 discordWebhookService,
                 panelLogger,
@@ -97,11 +108,66 @@ public final class MinePanel extends JavaPlugin {
         if (webPanelServer != null) {
             webPanelServer.stop();
         }
+
+        if (panelLogger != null) {
+            panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin stopping");
+        }
+
+        if (logRepository != null) {
+            exportPanelLogsToServerLogsDirectory();
+        }
+
         if (discordWebhookService != null) {
             discordWebhookService.shutdown();
         }
         if (database != null) {
             database.close();
+        }
+    }
+
+    private void exportPanelLogsToServerLogsDirectory() {
+        try {
+            Path pluginDataFolder = getDataFolder().toPath();
+            Path pluginsFolder = pluginDataFolder.getParent();
+            Path serverRoot = pluginsFolder == null ? pluginDataFolder : pluginsFolder.getParent();
+            if (serverRoot == null) {
+                serverRoot = pluginDataFolder;
+            }
+
+            Path logsDirectory = serverRoot.resolve("logs");
+            Files.createDirectories(logsDirectory);
+
+            String timestamp = EXPORT_FILE_NAME_FORMAT.format(Instant.now().atZone(ZoneOffset.UTC));
+            Path exportFile = logsDirectory.resolve("minepanel-panel-" + timestamp + ".log");
+
+            StringBuilder output = new StringBuilder();
+            for (var entry : logRepository.allLogsAscending()) {
+                output.append(Instant.ofEpochMilli(entry.createdAt()))
+                        .append(" [")
+                        .append(entry.kind())
+                        .append("] [")
+                        .append(entry.source())
+                        .append("] ")
+                        .append(entry.message())
+                        .append(System.lineSeparator());
+            }
+
+            if (output.isEmpty()) {
+                output.append(Instant.now()).append(" [SYSTEM] [PLUGIN] No panel logs available during shutdown export").append(System.lineSeparator());
+            }
+
+            Files.writeString(
+                    exportFile,
+                    output,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE
+            );
+
+            getLogger().info("Exported panel logs to " + exportFile.toAbsolutePath());
+        } catch (IOException | IllegalStateException exception) {
+            getLogger().warning("Could not export panel logs on disable: " + exception.getMessage());
         }
     }
 }

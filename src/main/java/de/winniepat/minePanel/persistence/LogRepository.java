@@ -56,6 +56,27 @@ public final class LogRepository {
         return entries;
     }
 
+    public List<PanelLogEntry> allLogsAscending() {
+        String sql = "SELECT id, kind, source, message, created_at FROM panel_logs ORDER BY id ASC";
+        List<PanelLogEntry> entries = new ArrayList<>();
+        try (Connection connection = database.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                entries.add(new PanelLogEntry(
+                        resultSet.getLong("id"),
+                        resultSet.getString("kind"),
+                        resultSet.getString("source"),
+                        resultSet.getString("message"),
+                        resultSet.getLong("created_at")
+                ));
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not query all panel logs", exception);
+        }
+        return entries;
+    }
+
     public long latestLogId() {
         String sql = "SELECT COALESCE(MAX(id), 0) AS latest_id FROM panel_logs";
         try (Connection connection = database.getConnection();

@@ -1,8 +1,8 @@
-package de.winniepat.managementWebsitePlugin.persistence;
+package de.winniepat.minePanel.persistence;
 
-import de.winniepat.managementWebsitePlugin.users.PanelUser;
-import de.winniepat.managementWebsitePlugin.users.PanelUserAuth;
-import de.winniepat.managementWebsitePlugin.users.UserRole;
+import de.winniepat.minePanel.users.PanelUser;
+import de.winniepat.minePanel.users.PanelUserAuth;
+import de.winniepat.minePanel.users.UserRole;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;

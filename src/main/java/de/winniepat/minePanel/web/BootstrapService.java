@@ -1,6 +1,6 @@
-package de.winniepat.managementWebsitePlugin.web;
+package de.winniepat.minePanel.web;
 
-import de.winniepat.managementWebsitePlugin.persistence.UserRepository;
+import de.winniepat.minePanel.persistence.UserRepository;
 
 import java.security.SecureRandom;
 import java.util.Base64;

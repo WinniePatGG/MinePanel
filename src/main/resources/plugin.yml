@@ -1,7 +1,7 @@
-name: ManagementWebsitePlugin
+name: MinePanel
 version: '${version}'
-main: de.winniepat.managementWebsitePlugin.ManagementWebsitePlugin
+main: de.winniepat.minePanel.MinePanel
 api-version: '1.21'
 authors: [ WinniePatGG ]
 website: https://winniepat.de
-description: Embedded management panel with secure auth, user roles, and log history.
+description: MinePanel with secure auth, user roles, and log history.

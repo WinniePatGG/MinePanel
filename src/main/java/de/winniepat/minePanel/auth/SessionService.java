@@ -1,6 +1,6 @@
-package de.winniepat.managementWebsitePlugin.auth;
+package de.winniepat.minePanel.auth;
 
-import de.winniepat.managementWebsitePlugin.persistence.Database;
+import de.winniepat.minePanel.persistence.Database;
 
 import java.security.SecureRandom;
 import java.sql.Connection;

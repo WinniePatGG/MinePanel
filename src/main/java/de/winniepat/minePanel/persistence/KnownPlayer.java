@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.persistence;
+package de.winniepat.minePanel.persistence;
 
 import java.util.UUID;
 

@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.users;
+package de.winniepat.minePanel.users;
 
 import java.util.EnumSet;
 import java.util.Locale;

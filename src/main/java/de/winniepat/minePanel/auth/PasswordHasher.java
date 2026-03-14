@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.auth;
+package de.winniepat.minePanel.auth;
 
 import org.mindrot.jbcrypt.BCrypt;
 

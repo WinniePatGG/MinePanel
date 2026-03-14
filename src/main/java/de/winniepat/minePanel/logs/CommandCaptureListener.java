@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.logs;
+package de.winniepat.minePanel.logs;
 
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;

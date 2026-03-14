@@ -1,6 +1,6 @@
-package de.winniepat.managementWebsitePlugin.persistence;
+package de.winniepat.minePanel.persistence;
 
-import de.winniepat.managementWebsitePlugin.logs.PanelLogEntry;
+import de.winniepat.minePanel.logs.PanelLogEntry;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;

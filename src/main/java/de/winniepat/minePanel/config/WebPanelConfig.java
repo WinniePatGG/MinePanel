@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.config;
+package de.winniepat.minePanel.config;
 
 import org.bukkit.configuration.file.FileConfiguration;
 

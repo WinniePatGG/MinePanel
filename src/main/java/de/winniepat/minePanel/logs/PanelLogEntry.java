@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.logs;
+package de.winniepat.minePanel.logs;
 
 public record PanelLogEntry(
         long id,

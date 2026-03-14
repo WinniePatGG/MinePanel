@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.users;
+package de.winniepat.minePanel.users;
 
 public record PanelUser(
         long id,

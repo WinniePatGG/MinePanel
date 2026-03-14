@@ -1,25 +1,25 @@
-package de.winniepat.managementWebsitePlugin;
+package de.winniepat.minePanel;
 
-import de.winniepat.managementWebsitePlugin.auth.PasswordHasher;
-import de.winniepat.managementWebsitePlugin.auth.SessionService;
-import de.winniepat.managementWebsitePlugin.config.WebPanelConfig;
-import de.winniepat.managementWebsitePlugin.logs.ChatCaptureListener;
-import de.winniepat.managementWebsitePlugin.logs.CommandCaptureListener;
-import de.winniepat.managementWebsitePlugin.logs.PanelLogger;
-import de.winniepat.managementWebsitePlugin.logs.PlayerSeenListener;
-import de.winniepat.managementWebsitePlugin.logs.ServerLogService;
-import de.winniepat.managementWebsitePlugin.persistence.Database;
-import de.winniepat.managementWebsitePlugin.persistence.KnownPlayerRepository;
-import de.winniepat.managementWebsitePlugin.persistence.LogRepository;
-import de.winniepat.managementWebsitePlugin.persistence.UserRepository;
-import de.winniepat.managementWebsitePlugin.web.BootstrapService;
-import de.winniepat.managementWebsitePlugin.web.WebPanelServer;
+import de.winniepat.minePanel.auth.PasswordHasher;
+import de.winniepat.minePanel.auth.SessionService;
+import de.winniepat.minePanel.config.WebPanelConfig;
+import de.winniepat.minePanel.logs.ChatCaptureListener;
+import de.winniepat.minePanel.logs.CommandCaptureListener;
+import de.winniepat.minePanel.logs.PanelLogger;
+import de.winniepat.minePanel.logs.PlayerSeenListener;
+import de.winniepat.minePanel.logs.ServerLogService;
+import de.winniepat.minePanel.persistence.Database;
+import de.winniepat.minePanel.persistence.KnownPlayerRepository;
+import de.winniepat.minePanel.persistence.LogRepository;
+import de.winniepat.minePanel.persistence.UserRepository;
+import de.winniepat.minePanel.web.BootstrapService;
+import de.winniepat.minePanel.web.WebPanelServer;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.nio.file.Path;
 
-public final class ManagementWebsitePlugin extends JavaPlugin {
+public final class MinePanel extends JavaPlugin {
 
     private Database database;
     private WebPanelServer webPanelServer;
@@ -78,8 +78,8 @@ public final class ManagementWebsitePlugin extends JavaPlugin {
         );
         this.webPanelServer.start();
 
-        getLogger().info("Management panel available at http://" + panelConfig.host() + ":" + panelConfig.port());
-        panelLogger.log("SYSTEM", "PLUGIN", "Management website plugin started");
+        getLogger().info("MinePanel available at http://" + panelConfig.host() + ":" + panelConfig.port());
+        panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin started");
 
     }
 

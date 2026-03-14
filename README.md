@@ -1,4 +1,4 @@
-# ManagementWebsitePlugin
+# MinePanel
 
 Paper plugin with an embedded admin web panel.
 
@@ -33,7 +33,7 @@ logging:
 .\gradlew.bat shadowJar
 ```
 
-Output jar: `build/libs/ManagementWebsitePlugin-1.0.jar`
+Output jar: `build/libs/MinePanel-1.0.jar`
 
 ## First launch
 

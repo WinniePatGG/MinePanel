@@ -1,22 +1,22 @@
-package de.winniepat.managementWebsitePlugin.web;
+package de.winniepat.minePanel.web;
 
 import com.google.gson.Gson;
-import de.winniepat.managementWebsitePlugin.ManagementWebsitePlugin;
-import de.winniepat.managementWebsitePlugin.auth.PasswordHasher;
-import de.winniepat.managementWebsitePlugin.auth.SessionService;
-import de.winniepat.managementWebsitePlugin.config.WebPanelConfig;
-import de.winniepat.managementWebsitePlugin.logs.PanelLogEntry;
-import de.winniepat.managementWebsitePlugin.logs.PanelLogger;
-import de.winniepat.managementWebsitePlugin.logs.ServerLogService;
-import de.winniepat.managementWebsitePlugin.persistence.KnownPlayer;
-import de.winniepat.managementWebsitePlugin.persistence.KnownPlayerRepository;
-import de.winniepat.managementWebsitePlugin.persistence.LogRepository;
-import de.winniepat.managementWebsitePlugin.persistence.UserRepository;
+import de.winniepat.minePanel.MinePanel;
+import de.winniepat.minePanel.auth.PasswordHasher;
+import de.winniepat.minePanel.auth.SessionService;
+import de.winniepat.minePanel.config.WebPanelConfig;
+import de.winniepat.minePanel.logs.PanelLogEntry;
+import de.winniepat.minePanel.logs.PanelLogger;
+import de.winniepat.minePanel.logs.ServerLogService;
+import de.winniepat.minePanel.persistence.KnownPlayer;
+import de.winniepat.minePanel.persistence.KnownPlayerRepository;
+import de.winniepat.minePanel.persistence.LogRepository;
+import de.winniepat.minePanel.persistence.UserRepository;
 import org.bukkit.BanEntry;
-import de.winniepat.managementWebsitePlugin.users.PanelPermission;
-import de.winniepat.managementWebsitePlugin.users.PanelUser;
-import de.winniepat.managementWebsitePlugin.users.PanelUserAuth;
-import de.winniepat.managementWebsitePlugin.users.UserRole;
+import de.winniepat.minePanel.users.PanelPermission;
+import de.winniepat.minePanel.users.PanelUser;
+import de.winniepat.minePanel.users.PanelUserAuth;
+import de.winniepat.minePanel.users.UserRole;
 import org.bukkit.BanList;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
@@ -53,7 +53,7 @@ public final class WebPanelServer {
 
     private static final String SESSION_COOKIE = "PANEL_SESSION";
 
-    private final ManagementWebsitePlugin plugin;
+    private final MinePanel plugin;
     private final WebPanelConfig config;
     private final UserRepository userRepository;
     private final SessionService sessionService;
@@ -66,7 +66,7 @@ public final class WebPanelServer {
     private final Gson gson = new Gson();
 
     public WebPanelServer(
-            ManagementWebsitePlugin plugin,
+            MinePanel plugin,
             WebPanelConfig config,
             UserRepository userRepository,
             SessionService sessionService,

@@ -1,4 +1,4 @@
-package de.winniepat.managementWebsitePlugin.logs;
+package de.winniepat.minePanel.logs;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

@@ -1,6 +1,6 @@
-package de.winniepat.managementWebsitePlugin.logs;
+package de.winniepat.minePanel.logs;
 
-import de.winniepat.managementWebsitePlugin.persistence.KnownPlayerRepository;
+import de.winniepat.minePanel.persistence.KnownPlayerRepository;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;

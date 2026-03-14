@@ -1,6 +1,6 @@
-package de.winniepat.managementWebsitePlugin.logs;
+package de.winniepat.minePanel.logs;
 
-import de.winniepat.managementWebsitePlugin.persistence.LogRepository;
+import de.winniepat.minePanel.persistence.LogRepository;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

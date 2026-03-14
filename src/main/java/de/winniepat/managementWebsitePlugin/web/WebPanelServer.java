@@ -355,9 +355,15 @@ public final class WebPanelServer {
             return json(response, 400, Map.of("error", "invalid_message"));
         }
 
-        boolean dispatched = dispatchConsoleCommand(command);
+        CommandDispatchResult dispatchResult = dispatchConsoleCommand(command);
         panelLogger.log("AUDIT", user.username(), "Sent console command: " + command);
-        return json(response, 200, Map.of("ok", true, "dispatched", dispatched));
+        panelLogger.log("CONSOLE_RESPONSE", "SERVER", "Command '" + command + "' -> " + dispatchResult.response());
+
+        return json(response, 200, Map.of(
+                "ok", true,
+                "dispatched", dispatchResult.dispatched(),
+                "response", dispatchResult.response()
+        ));
     }
 
     private List<Map<String, String>> snapshotOnlinePlayers() {
@@ -379,16 +385,20 @@ public final class WebPanelServer {
         }
     }
 
-    private boolean dispatchConsoleCommand(String command) {
+    private CommandDispatchResult dispatchConsoleCommand(String command) {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin,
+            boolean dispatched = plugin.getServer().getScheduler().callSyncMethod(plugin,
                     () -> plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command)
             ).get(2, TimeUnit.SECONDS);
+            if (dispatched) {
+                return new CommandDispatchResult(true, "executed");
+            }
+            return new CommandDispatchResult(false, "not_executed_or_unknown_command");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while dispatching console command", exception);
+            return new CommandDispatchResult(false, "interrupted");
         } catch (ExecutionException | TimeoutException exception) {
-            throw new IllegalStateException("Could not dispatch console command", exception);
+            return new CommandDispatchResult(false, "dispatch_error: " + exception.getClass().getSimpleName());
         }
     }
 
@@ -470,6 +480,9 @@ public final class WebPanelServer {
     }
 
     private record ConsolePayload(String message) {
+    }
+
+    private record CommandDispatchResult(boolean dispatched, String response) {
     }
 }
 

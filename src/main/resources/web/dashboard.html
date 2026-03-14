@@ -27,6 +27,10 @@
         <section class="card">
             <h2>Panel Logs + Chat + Commands</h2>
             <pre id="panelLogs" class="log-rectangle"></pre>
+            <div class="console-send-row">
+                <input id="consoleInput" placeholder="Type a console command (example: say hello world)">
+                <button id="sendConsole">Send</button>
+            </div>
         </section>
 
         <section class="card spaced-top">
@@ -38,6 +42,7 @@
 
 <script>
     let latestPanelLogId = 0;
+    const playerNodeCache = new Map();
 
     async function api(url, options) {
         const res = await fetch(url, options);
@@ -80,43 +85,79 @@
         const playerList = document.getElementById('playerList');
 
         playerCount.textContent = data.count ?? 0;
-        playerList.innerHTML = '';
 
         if (!Array.isArray(data.players) || data.players.length === 0) {
+            playerNodeCache.clear();
             const emptyItem = document.createElement('li');
             emptyItem.className = 'player-empty';
             emptyItem.textContent = 'No players online';
-            playerList.appendChild(emptyItem);
+            playerList.replaceChildren(emptyItem);
             return;
         }
 
+        const incomingKeys = new Set();
+        const orderedNodes = [];
+
         data.players.forEach(player => {
-            const item = document.createElement('li');
-            item.className = 'player-item';
+            const key = `${player.uuid}:${player.username}`;
+            incomingKeys.add(key);
 
-            const avatar = document.createElement('img');
-            avatar.className = 'player-avatar';
-            avatar.alt = `${player.username} skin face`;
-            avatar.referrerPolicy = 'no-referrer';
-            avatar.src = `https://crafatar.com/avatars/${player.uuid}?size=32&overlay`;
-            avatar.onerror = () => {
-                if (!avatar.dataset.fallbackTried) {
-                    avatar.dataset.fallbackTried = '1';
-                    avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(player.username)}/32`;
-                    return;
-                }
-                avatar.onerror = null;
-                avatar.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="%23131f38"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="14" fill="%23a9bbdf">?</text></svg>';
-            };
+            let item = playerNodeCache.get(key);
+            if (!item) {
+                item = document.createElement('li');
+                item.className = 'player-item';
 
-            const name = document.createElement('span');
-            name.className = 'player-name';
-            name.textContent = player.username;
+                const avatar = document.createElement('img');
+                avatar.className = 'player-avatar';
+                avatar.alt = `${player.username} skin face`;
+                avatar.referrerPolicy = 'no-referrer';
+                avatar.src = `https://crafatar.com/avatars/${player.uuid}?size=32&overlay`;
+                avatar.onerror = () => {
+                    if (!avatar.dataset.fallbackTried) {
+                        avatar.dataset.fallbackTried = '1';
+                        avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(player.username)}/32`;
+                        return;
+                    }
+                    avatar.onerror = null;
+                    avatar.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="%23131f38"/><text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="14" fill="%23a9bbdf">?</text></svg>';
+                };
 
-            item.appendChild(avatar);
-            item.appendChild(name);
-            playerList.appendChild(item);
+                const name = document.createElement('span');
+                name.className = 'player-name';
+                name.textContent = player.username;
+
+                item.appendChild(avatar);
+                item.appendChild(name);
+                playerNodeCache.set(key, item);
+            }
+
+            orderedNodes.push(item);
         });
+
+        for (const key of [...playerNodeCache.keys()]) {
+            if (!incomingKeys.has(key)) {
+                playerNodeCache.delete(key);
+            }
+        }
+
+        playerList.replaceChildren(...orderedNodes);
+    }
+
+    async function sendConsoleMessage() {
+        const input = document.getElementById('consoleInput');
+        const message = input.value.trim();
+        if (!message) {
+            return;
+        }
+
+        await api('/api/console/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+
+        input.value = '';
+        await loadLogs();
     }
 
     document.getElementById('refresh').addEventListener('click', async () => {
@@ -126,6 +167,17 @@
     document.getElementById('logout').addEventListener('click', async () => {
         await api('/api/logout', { method: 'POST' });
         window.location.href = '/';
+    });
+
+    document.getElementById('sendConsole').addEventListener('click', async () => {
+        await sendConsoleMessage();
+    });
+
+    document.getElementById('consoleInput').addEventListener('keydown', async event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            await sendConsoleMessage();
+        }
     });
 
 

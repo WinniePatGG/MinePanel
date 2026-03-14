@@ -144,6 +144,7 @@ public final class WebPanelServer {
             get("/logs", (request, response) -> handleLogs(request, response));
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
             get("/players", (request, response) -> handlePlayers(request, response));
+            post("/console/send", (request, response) -> handleSendConsole(request, response));
         });
 
         awaitInitialization();
@@ -332,6 +333,33 @@ public final class WebPanelServer {
         ));
     }
 
+    private String handleSendConsole(Request request, Response response) {
+        PanelUser user = requireUser(request, PanelPermission.SEND_CONSOLE);
+
+        ConsolePayload payload = gson.fromJson(request.body(), ConsolePayload.class);
+        if (payload == null || isBlank(payload.message())) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        String rawMessage = payload.message().trim();
+        if (rawMessage.isEmpty()) {
+            return json(response, 400, Map.of("error", "empty_message"));
+        }
+
+        if (rawMessage.contains("\n") || rawMessage.contains("\r")) {
+            return json(response, 400, Map.of("error", "invalid_message"));
+        }
+
+        String command = rawMessage.startsWith("/") ? rawMessage.substring(1).trim() : rawMessage;
+        if (command.isEmpty()) {
+            return json(response, 400, Map.of("error", "invalid_message"));
+        }
+
+        boolean dispatched = dispatchConsoleCommand(command);
+        panelLogger.log("AUDIT", user.username(), "Sent console command: " + command);
+        return json(response, 200, Map.of("ok", true, "dispatched", dispatched));
+    }
+
     private List<Map<String, String>> snapshotOnlinePlayers() {
         try {
             return plugin.getServer().getScheduler().callSyncMethod(plugin, () ->
@@ -348,6 +376,19 @@ public final class WebPanelServer {
             throw new IllegalStateException("Interrupted while reading online players", exception);
         } catch (ExecutionException | TimeoutException exception) {
             throw new IllegalStateException("Could not read online players", exception);
+        }
+    }
+
+    private boolean dispatchConsoleCommand(String command) {
+        try {
+            return plugin.getServer().getScheduler().callSyncMethod(plugin,
+                    () -> plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command)
+            ).get(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while dispatching console command", exception);
+        } catch (ExecutionException | TimeoutException exception) {
+            throw new IllegalStateException("Could not dispatch console command", exception);
         }
     }
 
@@ -426,6 +467,9 @@ public final class WebPanelServer {
     }
 
     private record UpdateRolePayload(String role) {
+    }
+
+    private record ConsolePayload(String message) {
     }
 }
 

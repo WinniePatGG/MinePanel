@@ -12,14 +12,19 @@
         <div class="sidebar-brand">MinePanel</div>
         <div id="me" class="sidebar-meta"></div>
         <nav class="side-nav">
-            <a class="side-link" href="/dashboard/overview">Overview</a>
-            <a class="side-link active" href="/console">Console</a>
-            <a class="side-link" href="/dashboard/resources">Resources</a>
-            <a class="side-link" href="/dashboard/players">Players</a>
-            <a class="side-link" href="/dashboard/bans">Bans</a>
-            <a class="side-link" href="/dashboard/users">Users</a>
-            <a class="side-link" href="/dashboard/plugins">Plugins</a>
-            <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+            <button class="side-category-toggle expanded" data-category="server" type="button">Server</button>
+            <div class="side-category-items expanded" data-category-items="server">
+                <a class="side-link active" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle expanded" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items expanded" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+            </div>
         </nav>
         <button id="logout" class="secondary sidebar-logout">Logout</button>
     </aside>
@@ -42,6 +47,19 @@
 </div>
 
 <script>
+    function initSidebarCategories() {
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items) return;
+
+            toggle.addEventListener('click', () => {
+                const expanded = items.classList.toggle('expanded');
+                toggle.classList.toggle('expanded', expanded);
+            });
+        });
+    }
+
     let latestPanelLogId = 0;
 
     async function api(url, options) {
@@ -119,6 +137,7 @@
 
     (async () => {
         try {
+            initSidebarCategories();
             await loadMe();
             await loadLogs();
             setInterval(() => {

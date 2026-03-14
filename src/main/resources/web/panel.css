@@ -97,6 +97,51 @@ p {
     gap: 6px;
 }
 
+.side-category-toggle {
+    margin-top: 6px;
+    margin-bottom: 2px;
+    color: #7f93b8;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 2px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    width: 100%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.side-category-toggle::after {
+    content: "▾";
+    font-size: 11px;
+    color: #8fa6d0;
+    transform: rotate(-90deg);
+    transition: transform 0.2s ease;
+}
+
+.side-category-toggle.expanded::after {
+    transform: rotate(0deg);
+}
+
+.side-category-items {
+    display: grid;
+    gap: 6px;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.22s ease, opacity 0.22s ease;
+}
+
+.side-category-items.expanded {
+    max-height: 420px;
+    opacity: 1;
+}
+
 .side-link {
     text-decoration: none;
     color: #c7d7f7;

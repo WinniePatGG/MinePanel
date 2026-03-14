@@ -167,7 +167,6 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-resources.html");
         });
 
-        // Backward-compatible alias.
         get("/dashboard/health", (request, response) -> {
             response.type("text/html");
             return ResourceLoader.loadUtf8Text("/web/dashboard-resources.html");
@@ -188,7 +187,6 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/panel.css");
         });
 
-        // Chromium sometimes probes this path; return 204 to avoid noisy unmatched-route logs.
         get("/.well-known/appspecific/com.chrome.devtools.json", (request, response) -> {
             response.status(204);
             return "";

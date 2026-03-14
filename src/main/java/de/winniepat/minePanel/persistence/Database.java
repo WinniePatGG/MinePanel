@@ -79,7 +79,7 @@ public final class Database {
     }
 
     public void close() {
-        // sqlite connections are short-lived and closed per operation
+
     }
 }
 

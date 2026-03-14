@@ -10,6 +10,21 @@
     --danger-bg: #3d1d29;
     --danger-text: #ffb7c7;
     --log-bg: #0a101d;
+    --sidebar-bg: #060b16;
+    --sidebar-border: #1b2942;
+    --sidebar-meta-bg: #0d1528;
+    --sidebar-meta-border: #1f3050;
+    --sidebar-toggle-text: #7f93b8;
+    --sidebar-toggle-icon: #8fa6d0;
+    --sidebar-link-text: #c7d7f7;
+    --sidebar-link-bg: #0f1930;
+    --sidebar-link-border: #263a5d;
+    --sidebar-link-hover-bg: #162642;
+    --button-bg: #4f8cff;
+    --button-border: #3a75e8;
+    --button-hover-bg: #5a95ff;
+    --button-secondary-bg: #21314d;
+    --button-secondary-border: #344769;
 }
 
 * {
@@ -67,8 +82,8 @@ p {
 }
 
 .sidebar {
-    background: #060b16;
-    border-right: 1px solid #1b2942;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
     padding: 18px 14px;
     display: flex;
     flex-direction: column;
@@ -85,9 +100,9 @@ p {
 .sidebar-meta {
     color: var(--text-muted);
     font-size: 13px;
-    border: 1px solid #1f3050;
+    border: 1px solid var(--sidebar-meta-border);
     border-radius: 8px;
-    background: #0d1528;
+    background: var(--sidebar-meta-bg);
     padding: 9px 10px;
 }
 
@@ -100,7 +115,7 @@ p {
 .side-category-toggle {
     margin-top: 6px;
     margin-bottom: 2px;
-    color: #7f93b8;
+    color: var(--sidebar-toggle-text);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -119,7 +134,7 @@ p {
 .side-category-toggle::after {
     content: "▾";
     font-size: 11px;
-    color: #8fa6d0;
+    color: var(--sidebar-toggle-icon);
     transform: rotate(-90deg);
     transition: transform 0.2s ease;
 }
@@ -144,9 +159,9 @@ p {
 
 .side-link {
     text-decoration: none;
-    color: #c7d7f7;
-    background: #0f1930;
-    border: 1px solid #263a5d;
+    color: var(--sidebar-link-text);
+    background: var(--sidebar-link-bg);
+    border: 1px solid var(--sidebar-link-border);
     border-radius: 8px;
     padding: 10px 11px;
     font-weight: 600;
@@ -154,7 +169,7 @@ p {
 }
 
 .side-link:hover {
-    background: #162642;
+    background: var(--sidebar-link-hover-bg);
 }
 
 .side-link.active {
@@ -305,14 +320,14 @@ button:focus {
 }
 
 button {
-    background: var(--accent);
-    border-color: var(--accent-strong);
+    background: var(--button-bg);
+    border-color: var(--button-border);
     cursor: pointer;
     font-weight: 600;
 }
 
 button:hover {
-    background: #5a95ff;
+    background: var(--button-hover-bg);
 }
 
 button:disabled {
@@ -321,8 +336,8 @@ button:disabled {
 }
 
 button.secondary {
-    background: #21314d;
-    border-color: #344769;
+    background: var(--button-secondary-bg);
+    border-color: var(--button-secondary-border);
 }
 
 .error {

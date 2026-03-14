@@ -708,6 +708,57 @@ button.secondary {
     grid-template-columns: 200px 1fr auto;
 }
 
+.theme-preset-row {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 1fr auto;
+}
+
+.theme-preset-row button {
+    width: auto;
+    min-width: 150px;
+}
+
+.theme-grid {
+    margin-top: 6px;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.theme-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid #23365a;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: #0f1930;
+    color: #c6d6f4;
+    font-size: 13px;
+}
+
+.theme-field input[type="color"] {
+    width: 50px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.theme-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.theme-actions button {
+    width: auto;
+    min-width: 170px;
+}
+
 .marketplace-search-row button {
     width: auto;
     min-width: 120px;
@@ -795,6 +846,14 @@ tbody tr:hover {
     }
 
     .marketplace-search-row {
+        grid-template-columns: 1fr;
+    }
+
+    .theme-preset-row {
+        grid-template-columns: 1fr;
+    }
+
+    .theme-grid {
         grid-template-columns: 1fr;
     }
 

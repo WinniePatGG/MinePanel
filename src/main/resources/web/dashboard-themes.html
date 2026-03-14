@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Themes</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <button class="side-category-toggle expanded" data-category="server" type="button">Server</button>
+            <div class="side-category-items expanded" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle expanded" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items expanded" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link active" href="/dashboard/themes">Themes</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Themes</h1>
+        <p>Pick a preset or customize panel colors.</p>
+
+        <section class="card spaced-top">
+            <h2>Presets</h2>
+            <div class="theme-preset-row">
+                <select id="themePreset">
+                    <option value="default">Default (MinePanel)</option>
+                    <option value="midnight">Midnight Blue</option>
+                    <option value="forest">Forest Dark</option>
+                    <option value="ember">Ember Dark</option>
+                </select>
+                <button id="applyPreset" type="button">Apply Preset</button>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Custom Colors</h2>
+            <div id="themeGrid" class="theme-grid"></div>
+            <div class="theme-actions">
+                <button id="saveTheme" type="button">Save Custom Theme</button>
+                <button id="resetTheme" class="secondary" type="button">Reset to Default</button>
+            </div>
+            <p id="themeStatus" class="action-status"></p>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items) return;
+
+            toggle.addEventListener('click', () => {
+                const expanded = items.classList.toggle('expanded');
+                toggle.classList.toggle('expanded', expanded);
+            });
+        });
+    }
+
+    const STORAGE_KEY = window.MinePanelTheme ? window.MinePanelTheme.storageKey : 'minepanel.customTheme';
+    const THEME_KEYS = [
+        '--bg',
+        '--surface',
+        '--surface-2',
+        '--border',
+        '--text',
+        '--text-muted',
+        '--accent',
+        '--accent-strong',
+        '--danger-bg',
+        '--danger-text',
+        '--log-bg'
+    ];
+
+    const PRESETS = {
+        default: {
+            '--bg': '#0b1220',
+            '--surface': '#111a2e',
+            '--surface-2': '#16233d',
+            '--border': '#24324f',
+            '--text': '#e5ebf8',
+            '--text-muted': '#99a8c6',
+            '--accent': '#4f8cff',
+            '--accent-strong': '#3a75e8',
+            '--danger-bg': '#3d1d29',
+            '--danger-text': '#ffb7c7',
+            '--log-bg': '#0a101d'
+        },
+        midnight: {
+            '--bg': '#070b17',
+            '--surface': '#0f1a30',
+            '--surface-2': '#132445',
+            '--border': '#263f67',
+            '--text': '#e6f0ff',
+            '--text-muted': '#97abd2',
+            '--accent': '#4f8cff',
+            '--accent-strong': '#2c6fe2',
+            '--danger-bg': '#3b1a2f',
+            '--danger-text': '#ffb5c6',
+            '--log-bg': '#090f1d'
+        },
+        forest: {
+            '--bg': '#0b1612',
+            '--surface': '#11231b',
+            '--surface-2': '#173026',
+            '--border': '#29503f',
+            '--text': '#e7fff5',
+            '--text-muted': '#97c7b0',
+            '--accent': '#3fbf7f',
+            '--accent-strong': '#2ca866',
+            '--danger-bg': '#3d1d29',
+            '--danger-text': '#ffb7c7',
+            '--log-bg': '#0b1511'
+        },
+        ember: {
+            '--bg': '#18100b',
+            '--surface': '#2a1a11',
+            '--surface-2': '#3a2416',
+            '--border': '#5a3a23',
+            '--text': '#fff0e8',
+            '--text-muted': '#d6b8a4',
+            '--accent': '#ff8f4f',
+            '--accent-strong': '#e67839',
+            '--danger-bg': '#4a1f22',
+            '--danger-text': '#ffb7b7',
+            '--log-bg': '#1a120d'
+        }
+    };
+
+    function setStatus(message, isError) {
+        const status = document.getElementById('themeStatus');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    function currentValueForKey(key) {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(key).trim();
+        return value || PRESETS.default[key] || '#000000';
+    }
+
+    function normalizeHex(value) {
+        if (!value) return '#000000';
+        const trimmed = value.trim();
+        if (!trimmed.startsWith('#')) return '#000000';
+        if (trimmed.length === 7) return trimmed;
+        if (trimmed.length === 4) {
+            return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+        }
+        return '#000000';
+    }
+
+    function buildThemeGrid() {
+        const grid = document.getElementById('themeGrid');
+        grid.innerHTML = '';
+
+        THEME_KEYS.forEach(key => {
+            const row = document.createElement('label');
+            row.className = 'theme-field';
+            row.setAttribute('for', `theme-${key.replace(/[^a-z0-9]/gi, '')}`);
+
+            const name = document.createElement('span');
+            name.textContent = key;
+
+            const input = document.createElement('input');
+            input.type = 'color';
+            input.id = `theme-${key.replace(/[^a-z0-9]/gi, '')}`;
+            input.dataset.themeKey = key;
+            input.value = normalizeHex(currentValueForKey(key));
+            input.addEventListener('input', () => {
+                document.documentElement.style.setProperty(key, input.value);
+            });
+
+            row.appendChild(name);
+            row.appendChild(input);
+            grid.appendChild(row);
+        });
+    }
+
+    function collectThemeFromInputs() {
+        const theme = {};
+        document.querySelectorAll('input[data-theme-key]').forEach(input => {
+            theme[input.dataset.themeKey] = input.value;
+        });
+        return theme;
+    }
+
+    function applyTheme(theme) {
+        if (window.MinePanelTheme) {
+            window.MinePanelTheme.applyTheme(theme);
+        } else {
+            Object.entries(theme).forEach(([key, value]) => {
+                document.documentElement.style.setProperty(key, value);
+            });
+        }
+        buildThemeGrid();
+    }
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    document.getElementById('applyPreset').addEventListener('click', () => {
+        const preset = document.getElementById('themePreset').value;
+        const theme = PRESETS[preset] || PRESETS.default;
+        applyTheme(theme);
+        setStatus(`Applied ${preset} preset. Save to keep it.`, false);
+    });
+
+    document.getElementById('saveTheme').addEventListener('click', () => {
+        const theme = collectThemeFromInputs();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
+        setStatus('Custom theme saved.', false);
+    });
+
+    document.getElementById('resetTheme').addEventListener('click', () => {
+        localStorage.removeItem(STORAGE_KEY);
+        applyTheme(PRESETS.default);
+        setStatus('Theme reset to default.', false);
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            buildThemeGrid();
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

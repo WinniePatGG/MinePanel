@@ -208,9 +208,19 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-discord-webhook.html");
         });
 
+        get("/dashboard/themes", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-themes.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return ResourceLoader.loadUtf8Text("/web/panel.css");
+        });
+
+        get("/theme.js", (request, response) -> {
+            response.type("application/javascript");
+            return ResourceLoader.loadUtf8Text("/web/theme.js");
         });
 
         get("/.well-known/appspecific/com.chrome.devtools.json", (request, response) -> {

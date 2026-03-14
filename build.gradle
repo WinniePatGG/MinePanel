@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'de.winniepat'
-version = 'alpha-0.0.1'
+version = 'alpha-1'
 
 base {
     archivesName = 'MinePanel'

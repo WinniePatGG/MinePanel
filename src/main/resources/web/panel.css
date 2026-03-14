@@ -754,6 +754,26 @@ button.secondary {
 .theme-grid {
     margin-top: 6px;
     display: grid;
+    gap: 10px;
+}
+
+.theme-group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--surface);
+}
+
+.theme-group-title {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.theme-group-grid {
+    display: grid;
     gap: 8px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -886,6 +906,10 @@ tbody tr:hover {
     }
 
     .theme-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .theme-group-grid {
         grid-template-columns: 1fr;
     }
 

@@ -121,6 +121,77 @@
         '--player-muted-border'
     ];
 
+    const THEME_GROUPS = [
+        {
+            title: 'Core',
+            keys: [
+                '--bg',
+                '--surface',
+                '--surface-2',
+                '--border',
+                '--text',
+                '--text-muted',
+                '--accent',
+                '--accent-strong',
+                '--danger-bg',
+                '--danger-text'
+            ]
+        },
+        {
+            title: 'Sidebar',
+            keys: [
+                '--sidebar-bg',
+                '--sidebar-border',
+                '--sidebar-meta-bg',
+                '--sidebar-meta-border',
+                '--sidebar-toggle-text',
+                '--sidebar-toggle-icon',
+                '--sidebar-link-text',
+                '--sidebar-link-bg',
+                '--sidebar-link-border',
+                '--sidebar-link-hover-bg'
+            ]
+        },
+        {
+            title: 'Buttons and Inputs',
+            keys: [
+                '--button-bg',
+                '--button-border',
+                '--button-hover-bg',
+                '--button-secondary-bg',
+                '--button-secondary-border',
+                '--input-bg',
+                '--focus-ring'
+            ]
+        },
+        {
+            title: 'Logs and Tables',
+            keys: [
+                '--log-bg',
+                '--log-border',
+                '--log-text',
+                '--table-bg',
+                '--table-head-bg',
+                '--table-row-border',
+                '--table-row-hover-bg',
+                '--table-head-text',
+                '--table-cell-text'
+            ]
+        },
+        {
+            title: 'Players',
+            keys: [
+                '--player-box-bg',
+                '--player-box-border',
+                '--player-box-hover-bg',
+                '--player-box-active-bg',
+                '--player-box-active-border',
+                '--player-muted-bg',
+                '--player-muted-border'
+            ]
+        }
+    ];
+
     const PRESETS = {
         default: {
             '--bg': '#0b1220',
@@ -326,31 +397,67 @@
         return '#000000';
     }
 
+    function buildThemeField(key) {
+        const row = document.createElement('label');
+        row.className = 'theme-field';
+        row.setAttribute('for', `theme-${key.replace(/[^a-z0-9]/gi, '')}`);
+
+        const name = document.createElement('span');
+        name.textContent = key;
+
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.id = `theme-${key.replace(/[^a-z0-9]/gi, '')}`;
+        input.dataset.themeKey = key;
+        input.value = normalizeHex(currentValueForKey(key));
+        input.addEventListener('input', () => {
+            document.documentElement.style.setProperty(key, input.value);
+        });
+
+        row.appendChild(name);
+        row.appendChild(input);
+        return row;
+    }
+
+    function buildThemeGroup(title, keys) {
+        const section = document.createElement('section');
+        section.className = 'theme-group';
+
+        const heading = document.createElement('h3');
+        heading.className = 'theme-group-title';
+        heading.textContent = title;
+
+        const content = document.createElement('div');
+        content.className = 'theme-group-grid';
+
+        keys.forEach(key => {
+            content.appendChild(buildThemeField(key));
+        });
+
+        section.appendChild(heading);
+        section.appendChild(content);
+        return section;
+    }
+
     function buildThemeGrid() {
         const grid = document.getElementById('themeGrid');
         grid.innerHTML = '';
 
-        THEME_KEYS.forEach(key => {
-            const row = document.createElement('label');
-            row.className = 'theme-field';
-            row.setAttribute('for', `theme-${key.replace(/[^a-z0-9]/gi, '')}`);
+        const usedKeys = new Set();
+        THEME_GROUPS.forEach(group => {
+            const validKeys = group.keys.filter(key => THEME_KEYS.includes(key));
+            if (validKeys.length === 0) {
+                return;
+            }
 
-            const name = document.createElement('span');
-            name.textContent = key;
-
-            const input = document.createElement('input');
-            input.type = 'color';
-            input.id = `theme-${key.replace(/[^a-z0-9]/gi, '')}`;
-            input.dataset.themeKey = key;
-            input.value = normalizeHex(currentValueForKey(key));
-            input.addEventListener('input', () => {
-                document.documentElement.style.setProperty(key, input.value);
-            });
-
-            row.appendChild(name);
-            row.appendChild(input);
-            grid.appendChild(row);
+            validKeys.forEach(key => usedKeys.add(key));
+            grid.appendChild(buildThemeGroup(group.title, validKeys));
         });
+
+        const ungrouped = THEME_KEYS.filter(key => !usedKeys.has(key));
+        if (ungrouped.length > 0) {
+            grid.appendChild(buildThemeGroup('Other', ungrouped));
+        }
     }
 
     function collectThemeFromInputs() {

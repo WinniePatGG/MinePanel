@@ -35,6 +35,10 @@
     --table-cell-text: #c7d4ee;
     --log-border: #213457;
     --log-text: #d6e0f8;
+    --chart-bg: #0b1427;
+    --chart-border: #213457;
+    --chart-grid: #7896d2;
+    --chart-label: #8ea6d2;
     --player-box-bg: #0f1930;
     --player-box-border: #23365a;
     --player-box-hover-bg: #162642;
@@ -282,8 +286,8 @@ p {
 }
 
 .chart-wrapper {
-    background: #0b1427;
-    border: 1px solid #213457;
+    background: var(--chart-bg);
+    border: 1px solid var(--chart-border);
     border-radius: 8px;
     padding: 8px;
     height: 260px;

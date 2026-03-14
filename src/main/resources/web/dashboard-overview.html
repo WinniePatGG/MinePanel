@@ -172,6 +172,11 @@
         return { label: 'Bad', cssClass: 'metric-bad' };
     }
 
+    function themeColor(name, fallback) {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return value || fallback;
+    }
+
     function drawAllCharts() {
         drawSeriesChart('tpsChart', latestHistory.tps || [], {
             minY: 0,
@@ -204,8 +209,12 @@
         canvas.height = Math.max(1, Math.floor(height * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+        const chartBackground = themeColor('--chart-bg', '#0b1427');
+        const chartGrid = themeColor('--chart-grid', 'rgba(120, 150, 210, 0.22)');
+        const chartLabel = themeColor('--chart-label', '#8ea6d2');
+
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#0b1427';
+        ctx.fillStyle = chartBackground;
         ctx.fillRect(0, 0, width, height);
 
         const padding = { left: 40, right: 16, top: 12, bottom: 24 };
@@ -228,7 +237,7 @@
         const minX = now - (60 * 60 * 1000);
         const maxX = now;
 
-        ctx.strokeStyle = 'rgba(120, 150, 210, 0.22)';
+        ctx.strokeStyle = chartGrid;
         ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i += 1) {
             const y = padding.top + (chartHeight * i / 4);
@@ -238,7 +247,7 @@
             ctx.stroke();
 
             const labelValue = maxY - ((maxY - minY) * i / 4);
-            ctx.fillStyle = '#8ea6d2';
+            ctx.fillStyle = chartLabel;
             ctx.font = '11px Segoe UI';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
@@ -246,7 +255,7 @@
         }
 
         if (safePoints.length === 0) {
-            ctx.fillStyle = '#8ea6d2';
+            ctx.fillStyle = chartLabel;
             ctx.font = '13px Segoe UI';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -281,7 +290,7 @@
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        ctx.fillStyle = '#8ea6d2';
+        ctx.fillStyle = chartLabel;
         ctx.font = '11px Segoe UI';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';

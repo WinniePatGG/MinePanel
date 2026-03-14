@@ -54,6 +54,7 @@ import static spark.Spark.post;
 public final class WebPanelServer {
 
     private static final String SESSION_COOKIE = "PANEL_SESSION";
+    private final long serverStartedAtMillis = System.currentTimeMillis();
 
     private final MinePanel plugin;
     private final WebPanelConfig config;
@@ -193,6 +194,7 @@ public final class WebPanelServer {
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
             get("/players", (request, response) -> handlePlayers(request, response));
             get("/plugins", (request, response) -> handlePlugins(request, response));
+            get("/uptime", (request, response) -> handleUptime(request, response));
             post("/players/:uuid/kick", (request, response) -> handleKickPlayer(request, response));
             post("/players/:uuid/temp-ban", (request, response) -> handleTempBanPlayer(request, response));
             post("/players/ban", (request, response) -> handleBanPlayer(request, response));
@@ -436,6 +438,15 @@ public final class WebPanelServer {
         return json(response, 200, Map.of(
                 "count", plugins.size(),
                 "plugins", plugins
+        ));
+    }
+
+    private String handleUptime(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        long now = System.currentTimeMillis();
+        return json(response, 200, Map.of(
+                "startedAt", serverStartedAtMillis,
+                "uptimeMillis", Math.max(0, now - serverStartedAtMillis)
         ));
     }
 

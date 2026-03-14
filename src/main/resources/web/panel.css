@@ -141,6 +141,17 @@ p {
     font-size: 13px;
 }
 
+.stat-chip {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid #294166;
+    background: #101b31;
+    color: #c8dafb;
+    font-size: 12px;
+}
+
 .stat-value {
     margin-top: 4px;
     font-size: 28px;

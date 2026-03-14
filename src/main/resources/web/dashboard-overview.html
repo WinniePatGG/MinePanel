@@ -31,6 +31,10 @@
                 <div id="statOnline" class="stat-value">0</div>
             </div>
             <div class="card stat-card">
+                <div class="stat-label">Uptime</div>
+                <div id="statUptime" class="stat-value">0s</div>
+            </div>
+            <div class="card stat-card">
                 <div class="stat-label">Known Players</div>
                 <div id="statKnown" class="stat-value">0</div>
             </div>
@@ -52,6 +56,9 @@
 </div>
 
 <script>
+    let baseUptimeMillis = 0;
+    let baseUptimeCapturedAt = Date.now();
+
     async function api(url, options) {
         const res = await fetch(url, options);
         const data = await res.json();
@@ -65,16 +72,20 @@
     }
 
     async function loadOverview() {
-        const [players, plugins, logs] = await Promise.all([
+        const [players, plugins, logs, uptime] = await Promise.all([
             api('/api/players'),
             api('/api/plugins'),
-            api('/api/logs?limit=50')
+            api('/api/logs?limit=50'),
+            api('/api/uptime')
         ]);
 
         const allPlayers = Array.isArray(players.allPlayers) ? players.allPlayers : [];
         const bannedCount = allPlayers.filter(player => player.banned).length;
 
         document.getElementById('statOnline').textContent = String(players.count ?? 0);
+        baseUptimeMillis = Math.max(0, Number(uptime.uptimeMillis) || 0);
+        baseUptimeCapturedAt = Date.now();
+        updateUptimeDisplay();
         document.getElementById('statKnown').textContent = String(allPlayers.length);
         document.getElementById('statPlugins').textContent = String(plugins.count ?? 0);
         document.getElementById('statBans').textContent = String(bannedCount);
@@ -85,6 +96,28 @@
             .join('\n');
     }
 
+    function updateUptimeDisplay() {
+        const elapsedSinceCapture = Date.now() - baseUptimeCapturedAt;
+        const liveUptimeMillis = baseUptimeMillis + Math.max(0, elapsedSinceCapture);
+        document.getElementById('statUptime').textContent = formatDuration(liveUptimeMillis);
+    }
+
+    function formatDuration(totalMillis) {
+        const safe = Math.max(0, Number(totalMillis) || 0);
+        const totalSeconds = Math.floor(safe / 1000);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        const parts = [];
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0 || days > 0) parts.push(`${hours}h`);
+        if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+        parts.push(`${seconds}s`);
+        return parts.join(' ');
+    }
+
     document.getElementById('logout').addEventListener('click', async () => {
         await api('/api/logout', { method: 'POST' });
         window.location.href = '/';
@@ -93,6 +126,9 @@
     (async () => {
         try {
             await Promise.all([loadMe(), loadOverview()]);
+            setInterval(() => {
+                updateUptimeDisplay();
+            }, 1000);
             setInterval(() => {
                 loadOverview().catch(() => {});
             }, 5000);

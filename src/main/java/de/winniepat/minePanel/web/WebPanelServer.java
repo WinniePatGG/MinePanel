@@ -161,6 +161,18 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-bans.html");
         });
 
+
+        get("/dashboard/resources", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-resources.html");
+        });
+
+        // Backward-compatible alias.
+        get("/dashboard/health", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-resources.html");
+        });
+
         get("/dashboard/players", (request, response) -> {
             response.type("text/html");
             return ResourceLoader.loadUtf8Text("/web/dashboard-players.html");
@@ -195,6 +207,7 @@ public final class WebPanelServer {
             get("/players", (request, response) -> handlePlayers(request, response));
             get("/plugins", (request, response) -> handlePlugins(request, response));
             get("/uptime", (request, response) -> handleUptime(request, response));
+            get("/health", (request, response) -> handleHealth(request, response));
             post("/players/:uuid/kick", (request, response) -> handleKickPlayer(request, response));
             post("/players/:uuid/temp-ban", (request, response) -> handleTempBanPlayer(request, response));
             post("/players/ban", (request, response) -> handleBanPlayer(request, response));
@@ -448,6 +461,54 @@ public final class WebPanelServer {
                 "startedAt", serverStartedAtMillis,
                 "uptimeMillis", Math.max(0, now - serverStartedAtMillis)
         ));
+    }
+
+    private String handleHealth(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+
+        Runtime runtime = Runtime.getRuntime();
+        long maxMemory = runtime.maxMemory();
+        long totalMemory = runtime.totalMemory();
+        long freeMemory = runtime.freeMemory();
+        long usedMemory = totalMemory - freeMemory;
+
+        double cpuSystemLoad = -1.0;
+        double cpuProcessLoad = -1.0;
+        int cpuCores = runtime.availableProcessors();
+        java.lang.management.OperatingSystemMXBean mxBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+        if (mxBean instanceof com.sun.management.OperatingSystemMXBean sunBean) {
+            cpuSystemLoad = sunBean.getCpuLoad();
+            cpuProcessLoad = sunBean.getProcessCpuLoad();
+        }
+
+        Map<String, Object> health = new HashMap<>();
+        health.put("uptimeMillis", Math.max(0, System.currentTimeMillis() - serverStartedAtMillis));
+        health.put("serverName", plugin.getServer().getName());
+        health.put("serverVersion", plugin.getServer().getVersion());
+        health.put("bukkitVersion", plugin.getServer().getBukkitVersion());
+        health.put("onlinePlayers", plugin.getServer().getOnlinePlayers().size());
+        health.put("maxPlayers", plugin.getServer().getMaxPlayers());
+        health.put("cpuSystemLoad", cpuSystemLoad);
+        health.put("cpuProcessLoad", cpuProcessLoad);
+        health.put("cpuCores", cpuCores);
+        health.put("memoryUsed", usedMemory);
+        health.put("memoryTotal", totalMemory);
+        health.put("memoryMax", maxMemory);
+
+        try {
+            var fileStore = java.nio.file.Files.getFileStore(plugin.getDataFolder().toPath());
+            long totalSpace = fileStore.getTotalSpace();
+            long freeSpace = fileStore.getUsableSpace();
+            health.put("diskTotal", totalSpace);
+            health.put("diskUsed", totalSpace - freeSpace);
+            health.put("diskFree", freeSpace);
+        } catch (Exception ignored) {
+            health.put("diskTotal", -1L);
+            health.put("diskUsed", -1L);
+            health.put("diskFree", -1L);
+        }
+
+        return json(response, 200, health);
     }
 
     private String handleGetDiscordWebhook(Request request, Response response) {

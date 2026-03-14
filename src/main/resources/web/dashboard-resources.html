@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Resources</title>
+    <link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <a class="side-link" href="/console">Console</a>
+            <a class="side-link active" href="/dashboard/resources">Resources</a>
+            <a class="side-link" href="/dashboard/players">Players</a>
+            <a class="side-link" href="/dashboard/bans">Bans</a>
+            <a class="side-link" href="/dashboard/users">Users</a>
+            <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Resources</h1>
+        <section class="stats-grid spaced-top">
+            <div class="card stat-card">
+                <div class="stat-label">CPU Load (System)</div>
+                <div id="statCpuSystem" class="stat-value">0%</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">CPU Load (MinePanel Process)</div>
+                <div id="statCpuProcess" class="stat-value">0%</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">Memory Used</div>
+                <div id="statMemory" class="stat-value">0 MB</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">Disk Used</div>
+                <div id="statDisk" class="stat-value">0 GB</div>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Server Runtime</h2>
+            <pre id="runtimeInfo" class="log-rectangle short"></pre>
+        </section>
+    </main>
+</div>
+
+<script>
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function toPercent(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric < 0) {
+            return 'Unavailable';
+        }
+        return `${Math.round(numeric * 1000) / 10}%`;
+    }
+
+    function toMb(bytes) {
+        return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+    }
+
+    function toGb(bytes) {
+        return `${Math.round((bytes / (1024 * 1024 * 1024)) * 100) / 100} GB`;
+    }
+
+    async function loadHealth() {
+        const health = await api('/api/health');
+
+        document.getElementById('statCpuSystem').textContent = toPercent(health.cpuSystemLoad);
+        document.getElementById('statCpuProcess').textContent = toPercent(health.cpuProcessLoad);
+        document.getElementById('statMemory').textContent = `${toMb(health.memoryUsed || 0)} / ${toMb(health.memoryMax || 0)}`;
+
+        if ((health.diskUsed || -1) >= 0 && (health.diskTotal || -1) >= 0) {
+            document.getElementById('statDisk').textContent = `${toGb(health.diskUsed)} / ${toGb(health.diskTotal)}`;
+        } else {
+            document.getElementById('statDisk').textContent = 'Unavailable';
+        }
+
+        document.getElementById('runtimeInfo').textContent = [
+            `Server: ${health.serverName || 'unknown'}`,
+            `Version: ${health.serverVersion || 'unknown'}`,
+            `Bukkit: ${health.bukkitVersion || 'unknown'}`,
+            `CPU Cores: ${health.cpuCores || 0}`,
+            `Memory Total: ${toMb(health.memoryTotal || 0)}`,
+            `Memory Free: ${toMb((health.memoryTotal || 0) - (health.memoryUsed || 0))}`,
+            `Disk Free: ${(health.diskFree || -1) >= 0 ? toGb(health.diskFree) : 'Unavailable'}`
+        ].join('\n');
+    }
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            await Promise.all([loadMe(), loadHealth()]);
+            setInterval(() => {
+                loadHealth().catch(() => {});
+            }, 3000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+
+

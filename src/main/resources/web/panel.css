@@ -63,6 +63,7 @@ body {
     color: var(--text);
     font-family: "Inter", "Segoe UI", Arial, sans-serif;
     line-height: 1.4;
+    overflow: hidden;
 }
 
 h1,
@@ -97,9 +98,10 @@ p {
 }
 
 .layout {
-    min-height: 100vh;
+    height: 100vh;
     display: grid;
     grid-template-columns: 240px 1fr;
+    overflow: hidden;
 }
 
 .sidebar {
@@ -109,6 +111,9 @@ p {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
 }
 
 .sidebar-brand {
@@ -205,6 +210,8 @@ p {
 
 .content-area {
     padding: 26px 22px 24px;
+    height: 100vh;
+    overflow-y: auto;
 }
 
 .stats-grid {
@@ -856,13 +863,27 @@ tbody tr:hover {
 }
 
 @media (max-width: 960px) {
+    body {
+        overflow: auto;
+    }
+
     .layout {
+        height: auto;
         grid-template-columns: 1fr;
+        overflow: visible;
     }
 
     .sidebar {
+        position: static;
+        top: auto;
+        height: auto;
         border-right: 0;
         border-bottom: 1px solid #1b2942;
+    }
+
+    .content-area {
+        height: auto;
+        overflow: visible;
     }
 
     .row {

@@ -65,6 +65,18 @@
             border-color: rgba(127, 140, 170, 0.5);
         }
 
+        .ext-status-restart {
+            color: #9ec0ff;
+            background: rgba(81, 125, 255, 0.2);
+            border-color: rgba(81, 125, 255, 0.45);
+        }
+
+        .ext-status-installed {
+            color: #8af0b4;
+            background: rgba(46, 204, 113, 0.18);
+            border-color: rgba(46, 204, 113, 0.5);
+        }
+
         .ext-warning {
             margin: 10px 0 0;
             padding: 8px 10px;
@@ -106,12 +118,14 @@
         <h1>Extensions</h1>
         <p>Shows loaded extensions and extension downloads from the latest GitHub release/pre-release.</p>
         <div id="extensionsWarning" class="ext-warning" style="display:none;"></div>
+        <div id="extensionsInstallMessage" class="ext-warning" style="display:none;"></div>
 
         <div class="toolbar">
             <select id="releaseChannel" style="width:auto;min-width:180px;">
                 <option value="release">Release</option>
                 <option value="prerelease">Pre-release</option>
             </select>
+            <button id="reloadExtensions" class="secondary">Reload Extensions</button>
             <button id="refresh" class="secondary">Refresh</button>
         </div>
 
@@ -228,6 +242,16 @@
         }
     }
 
+    function installStateBadge(state) {
+        if (state === 'restart_required') {
+            return '<span class="ext-status ext-status-restart">Restart required</span>';
+        }
+        if (state === 'installed') {
+            return '<span class="ext-status ext-status-installed">Installed</span>';
+        }
+        return '';
+    }
+
     function renderAvailableExtensions(availableExtensions) {
         const body = document.getElementById('availableExtensionsBody');
         body.innerHTML = '';
@@ -244,17 +268,97 @@
             const description = extension.description || '-';
             const release = extension.release || '-';
             const projectUrl = extension.projectUrl || '#';
-            const downloadUrl = extension.downloadUrl || projectUrl;
+            const extensionId = extension.extensionId || '';
+            const fileName = extension.id || '';
+            const installState = extension.installState || 'not_installed';
             const prereleaseSuffix = extension.prerelease ? ' (pre-release)' : '';
+            const statusBadge = installStateBadge(installState);
+            const actionMarkup = installState === 'restart_required'
+                ? '<span class="ext-status ext-status-restart">Restart required</span>'
+                : (installState === 'installed'
+                    ? '<span class="ext-status ext-status-installed">Installed</span>'
+                    : `<button class="ext-download" data-install-extension="${extensionId}" data-install-file="${fileName}">Install</button>`);
 
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td><a class="ext-link" href="${projectUrl}" target="_blank" rel="noopener noreferrer">${name}</a></td>
                 <td>${description}</td>
-                <td>${release}${prereleaseSuffix}</td>
-                <td><a class="ext-download" href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Download</a></td>
+                <td>${release}${prereleaseSuffix} ${statusBadge}</td>
+                <td>${actionMarkup}</td>
             `;
             body.appendChild(row);
+        }
+
+        body.querySelectorAll('button[data-install-extension]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const channel = document.getElementById('releaseChannel').value || 'release';
+                const selectedExtensionId = button.dataset.installExtension || '';
+                const selectedFile = button.dataset.installFile || '';
+                await installExtension(channel, selectedExtensionId, selectedFile, button);
+            });
+        });
+    }
+
+    function showInstallMessage(message, isError) {
+        const banner = document.getElementById('extensionsInstallMessage');
+        banner.textContent = message || '';
+        banner.style.display = message ? 'block' : 'none';
+        if (isError) {
+            banner.style.borderColor = 'rgba(231, 76, 60, 0.45)';
+            banner.style.background = 'rgba(231, 76, 60, 0.16)';
+            banner.style.color = '#ffc7c1';
+            return;
+        }
+        banner.style.borderColor = 'rgba(81, 125, 255, 0.45)';
+        banner.style.background = 'rgba(81, 125, 255, 0.16)';
+        banner.style.color = '#bfd1ff';
+    }
+
+    async function installExtension(channel, extensionId, fileName, button) {
+        if (!extensionId || !fileName) {
+            showInstallMessage('Invalid extension selection.', true);
+            return;
+        }
+
+        const previousText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Installing...';
+        showInstallMessage('', false);
+
+        try {
+            const response = await api('/api/extensions/install', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel, extensionId, fileName })
+            });
+            const text = response.message || 'Downloaded extension. Restart required.';
+            showInstallMessage(text, false);
+            await loadExtensionStatus();
+        } catch (error) {
+            showInstallMessage(error.message || 'Could not install extension.', true);
+            button.disabled = false;
+            button.textContent = previousText;
+        }
+    }
+
+    async function reloadExtensions(button) {
+        const previousText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Reloading...';
+        showInstallMessage('', false);
+
+        try {
+            const payload = await api('/api/extensions/reload', { method: 'POST' });
+            const warningText = Array.isArray(payload.warnings) && payload.warnings.length > 0
+                ? ` Warnings: ${payload.warnings.join(', ')}`
+                : '';
+            showInstallMessage((payload.message || 'Extensions reloaded.') + warningText, false);
+            await loadExtensionStatus();
+        } catch (error) {
+            showInstallMessage(error.message || 'Could not reload extensions.', true);
+        } finally {
+            button.disabled = false;
+            button.textContent = previousText;
         }
     }
 
@@ -285,7 +389,13 @@
     });
 
     document.getElementById('refresh').addEventListener('click', async () => {
+        showInstallMessage('', false);
         await loadExtensionStatus();
+    });
+
+    document.getElementById('reloadExtensions').addEventListener('click', async () => {
+        const button = document.getElementById('reloadExtensions');
+        await reloadExtensions(button);
     });
 
     document.getElementById('logout').addEventListener('click', async () => {

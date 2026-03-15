@@ -29,6 +29,9 @@ public final class WebAssetService {
             "theme.js"
     );
 
+    private static final String LEGACY_EXTENSIONS_DOWNLOAD_MARKER = "href=\"${downloadUrl}\"";
+    private static final String CURRENT_EXTENSIONS_INSTALL_MARKER = "data-install-extension";
+
     private final MinePanel plugin;
     private final Path webDirectory;
 
@@ -50,9 +53,32 @@ public final class WebAssetService {
                 continue;
             }
             if (Files.exists(target)) {
+                migrateLegacyAssets(fileName, target);
                 continue;
             }
             plugin.saveResource("web/" + fileName, false);
+        }
+    }
+
+    private void migrateLegacyAssets(String fileName, Path target) {
+        if (!"dashboard-extensions.html".equals(fileName)) {
+            return;
+        }
+
+        try {
+            String current = Files.readString(target, StandardCharsets.UTF_8);
+            if (current.contains(CURRENT_EXTENSIONS_INSTALL_MARKER)) {
+                return;
+            }
+            if (!current.contains(LEGACY_EXTENSIONS_DOWNLOAD_MARKER)) {
+                return;
+            }
+
+            String bundled = ResourceLoader.loadUtf8Text("/web/" + fileName);
+            Files.writeString(target, bundled, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            plugin.getLogger().info("Updated legacy web template: " + fileName);
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Could not migrate legacy web template " + fileName + ": " + exception.getMessage());
         }
     }
 

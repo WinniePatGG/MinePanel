@@ -69,6 +69,7 @@ public final class WebPanelServer {
     private JsonArray cachedGitHubReleases = new JsonArray();
     private long githubReleaseCacheExpiresAtMillis = 0L;
     private String lastGitHubCatalogError = "";
+    private final Set<String> restartRequiredExtensionIds = new HashSet<>();
     private BukkitTask overviewSamplerTask;
 
     public WebPanelServer(
@@ -229,6 +230,8 @@ public final class WebPanelServer {
             get("/me", (request, response) -> handleMe(request, response));
             get("/extensions/navigation", (request, response) -> handleExtensionNavigation(request, response));
             get("/extensions/status", (request, response) -> handleExtensionStatus(request, response));
+            post("/extensions/install", (request, response) -> handleExtensionInstall(request, response));
+            post("/extensions/reload", (request, response) -> handleExtensionReload(request, response));
             get("/web/live-version", (request, response) -> handleWebLiveVersion(response));
             get("/users", (request, response) -> handleListUsers(request, response));
             post("/users", (request, response) -> handleCreateUser(request, response));
@@ -1851,6 +1854,7 @@ public final class WebPanelServer {
         }
 
         List<Map<String, Object>> installedWithStatus = new ArrayList<>();
+        Set<String> installedIds = new HashSet<>();
         for (Map<String, Object> installedEntry : installed) {
             Map<String, Object> row = new HashMap<>(installedEntry);
             String source = String.valueOf(installedEntry.getOrDefault("source", ""));
@@ -1858,6 +1862,13 @@ public final class WebPanelServer {
             String sourceExtensionId = normalizeExtensionKey(parseExtensionId(source));
             String installedVersionLabel = extractVersionLabel(source);
             VersionToken installedVersion = parseVersionToken(installedVersionLabel);
+
+            if (!extensionId.isBlank()) {
+                installedIds.add(extensionId);
+            }
+            if (!sourceExtensionId.isBlank()) {
+                installedIds.add(sourceExtensionId);
+            }
 
             ExtensionVersionInfo latest = latestByExtensionId.get(extensionId);
             if (latest == null && !sourceExtensionId.isBlank()) {
@@ -1889,18 +1900,201 @@ public final class WebPanelServer {
             installedWithStatus.add(row);
         }
 
+        List<Map<String, Object>> availableWithInstallState = new ArrayList<>();
+        Set<String> restartRequiredSnapshot;
+        synchronized (restartRequiredExtensionIds) {
+            restartRequiredSnapshot = new HashSet<>(restartRequiredExtensionIds);
+        }
+        for (Map<String, Object> availableEntry : availableExtensions) {
+            Map<String, Object> row = new HashMap<>(availableEntry);
+            String extensionId = normalizeExtensionKey(String.valueOf(availableEntry.getOrDefault("extensionId", "")));
+            if (!extensionId.isBlank() && restartRequiredSnapshot.contains(extensionId)) {
+                row.put("installState", "restart_required");
+            } else if (!extensionId.isBlank() && installedIds.contains(extensionId)) {
+                row.put("installState", "installed");
+            } else {
+                row.put("installState", "not_installed");
+            }
+            availableWithInstallState.add(row);
+        }
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("installed", installedWithStatus);
         payload.put("localArtifacts", localArtifacts);
-        payload.put("availableExtensions", availableExtensions);
+        payload.put("availableExtensions", availableWithInstallState);
         payload.put("channel", channel);
         payload.put("installedCount", installedWithStatus.size());
         payload.put("localArtifactCount", localArtifacts.size());
-        payload.put("availableExtensionCount", availableExtensions.size());
+        payload.put("availableExtensionCount", availableWithInstallState.size());
+        payload.put("restartRequiredCount", restartRequiredSnapshot.size());
         if (!lastGitHubCatalogError.isBlank()) {
             payload.put("availableExtensionsWarning", lastGitHubCatalogError);
         }
         return json(response, 200, payload);
+    }
+
+    private String handleExtensionInstall(Request request, Response response) {
+        PanelUser userSession = requireUser(request, PanelPermission.MANAGE_USERS);
+
+        JsonObject payload;
+        try {
+            payload = gson.fromJson(request.body(), JsonObject.class);
+        } catch (JsonSyntaxException exception) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+        if (payload == null) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        String channel = normalizeReleaseChannel(stringValue(payload, "channel"));
+        String extensionId = normalizeExtensionKey(stringValue(payload, "extensionId"));
+        String fileName = stringValue(payload, "fileName");
+        if (extensionId.isBlank() || isBlank(fileName)) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        List<Map<String, Object>> available = loadAvailableExtensionsFromGitHub(channel);
+        Map<String, Object> selected = null;
+        for (Map<String, Object> row : available) {
+            String rowId = normalizeExtensionKey(String.valueOf(row.getOrDefault("extensionId", "")));
+            String rowFile = String.valueOf(row.getOrDefault("id", ""));
+            if (extensionId.equals(rowId) && fileName.equals(rowFile)) {
+                selected = row;
+                break;
+            }
+        }
+
+        if (selected == null) {
+            return json(response, 404, Map.of("error", "extension_asset_not_found"));
+        }
+
+        String downloadUrl = String.valueOf(selected.getOrDefault("downloadUrl", ""));
+        if (isBlank(downloadUrl)) {
+            return json(response, 502, Map.of("error", "missing_download_url"));
+        }
+
+        if (!isValidExtensionJarFileName(fileName)) {
+            return json(response, 400, Map.of("error", "invalid_file_name"));
+        }
+
+        try {
+            Path extensionDirectory = plugin.getDataFolder().toPath().resolve("extensions");
+            Files.createDirectories(extensionDirectory);
+
+            Path destination = extensionDirectory.resolve(fileName).normalize();
+            if (!destination.startsWith(extensionDirectory)) {
+                return json(response, 400, Map.of("error", "invalid_file_name"));
+            }
+
+            downloadExtensionAsset(downloadUrl, destination);
+            synchronized (restartRequiredExtensionIds) {
+                restartRequiredExtensionIds.add(extensionId);
+            }
+            panelLogger.log("PANEL", "EXTENSIONS", "Downloaded extension " + fileName + " to " + destination.getFileName() + " by " + userSession.username());
+
+            return json(response, 200, Map.of(
+                    "ok", true,
+                    "fileName", fileName,
+                    "extensionId", extensionId,
+                    "requiresRestart", true,
+                    "message", "Downloaded to plugins/MinePanel/extensions. Restart required."
+            ));
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Could not install extension asset " + fileName + ": " + exception.getMessage());
+            return json(response, 500, Map.of("error", "extension_install_failed"));
+        }
+    }
+
+    private String handleExtensionReload(Request request, Response response) {
+        PanelUser user = requireUser(request, PanelPermission.MANAGE_USERS);
+
+        ExtensionManager.ReloadResult reloadResult;
+        try {
+            reloadResult = plugin.getServer().getScheduler().callSyncMethod(plugin,
+                    () -> extensionManager.reloadNewFromDirectory(new ExtensionSparkRegistry())
+            ).get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return json(response, 500, Map.of("error", "reload_interrupted"));
+        } catch (ExecutionException | TimeoutException exception) {
+            plugin.getLogger().warning("Could not reload extensions: " + exception.getMessage());
+            return json(response, 500, Map.of("error", "extension_reload_failed"));
+        }
+
+        synchronized (restartRequiredExtensionIds) {
+            for (String loadedId : reloadResult.loadedExtensionIds()) {
+                restartRequiredExtensionIds.remove(normalizeExtensionKey(loadedId));
+            }
+        }
+
+        int loadedCount = reloadResult.loadedExtensionIds().size();
+        panelLogger.log("PANEL", "EXTENSIONS", "Reload requested by " + user.username() + ": loaded " + loadedCount + " extension(s)");
+
+        String message = loadedCount == 0
+                ? "No new extensions were loaded."
+                : "Loaded " + loadedCount + " extension(s) successfully.";
+
+        return json(response, 200, Map.of(
+                "ok", true,
+                "loadedCount", loadedCount,
+                "loadedExtensionIds", reloadResult.loadedExtensionIds(),
+                "warningCount", reloadResult.warnings().size(),
+                "warnings", reloadResult.warnings(),
+                "message", message
+        ));
+    }
+
+    private void downloadExtensionAsset(String downloadUrl, Path destination) throws Exception {
+        URI sourceUri = URI.create(downloadUrl);
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(sourceUri)
+                .header("Accept", "application/octet-stream")
+                .header("User-Agent", "MinePanel")
+                .header("X-GitHub-Api-Version", "2022-11-28");
+
+        String token = resolveGitHubToken();
+        if (!token.isBlank()) {
+            requestBuilder.header("Authorization", "Bearer " + token);
+        }
+
+        HttpRequest request = requestBuilder.GET().build();
+        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+        if (isRedirectStatus(response.statusCode())) {
+            Optional<String> location = response.headers().firstValue("location");
+            if (location.isEmpty() || location.get().isBlank()) {
+                throw new IllegalStateException("GitHub download redirect missing location");
+            }
+
+            URI redirectedUri = sourceUri.resolve(location.get().trim());
+            HttpRequest redirectedRequest = HttpRequest.newBuilder(redirectedUri)
+                    .header("Accept", "application/octet-stream")
+                    .header("User-Agent", "MinePanel")
+                    .GET()
+                    .build();
+            response = httpClient.send(redirectedRequest, HttpResponse.BodyHandlers.ofByteArray());
+        }
+
+        if (response.statusCode() >= 300) {
+            throw new IllegalStateException("GitHub download status " + response.statusCode());
+        }
+
+        Files.write(destination, response.body(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+    }
+
+    private boolean isRedirectStatus(int statusCode) {
+        return statusCode == 301 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308;
+    }
+
+    private boolean isValidExtensionJarFileName(String fileName) {
+        if (isBlank(fileName)) {
+            return false;
+        }
+        String trimmed = fileName.trim();
+        String lowered = trimmed.toLowerCase(Locale.ROOT);
+        if (!lowered.endsWith(".jar") || !lowered.startsWith("minepanel-extension-")) {
+            return false;
+        }
+        return trimmed.matches("^[a-zA-Z0-9._-]+$");
     }
 
     private String normalizeReleaseChannel(String rawChannel) {

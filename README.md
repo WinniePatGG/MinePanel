@@ -71,6 +71,8 @@ security:
   - `build/libs/extensions/MinePanel-Extension-Reports-<version>.jar`
 - Player-management extension jar:
   - `build/libs/extensions/MinePanel-Extension-PlayerManagement-<version>.jar`
+- LuckPerms extension jar:
+  - `build/libs/extensions/MinePanel-Extension-LuckPerms-<version>.jar`
 
 ## Installation
 
@@ -102,6 +104,8 @@ This repository can build two extension jars:
   - Adds report system features.
 - `MinePanel-Extension-PlayerManagement-*`
   - Adds moderation/mute related player-management features.
+- `MinePanel-Extension-LuckPerms-*`
+  - Adds LuckPerms player details in Players tab (groups, permissions, prefix/suffix).
 
 ## Writing Third-Party Extensions
 

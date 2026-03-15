@@ -71,6 +71,17 @@
                         <div class="profile-field"><span>Country</span><strong id="profileCountry">-</strong></div>
                     </div>
 
+                    <div id="luckPermsSection" class="card spaced-top" style="display:none;padding:12px;">
+                        <h3 style="margin:0 0 8px;">LuckPerms</h3>
+                        <div class="profile-grid">
+                            <div class="profile-field"><span>Primary Group</span><strong id="lpPrimaryGroup">-</strong></div>
+                            <div class="profile-field"><span>Prefix / Suffix</span><strong id="lpPrefixSuffix">-</strong></div>
+                        </div>
+                        <div class="profile-field spaced-top"><span>Groups</span><strong id="lpGroups">-</strong></div>
+                        <div class="profile-field spaced-top"><span>Permissions</span><strong id="lpPermissionsMeta">-</strong></div>
+                        <pre id="lpPermissions" class="log-rectangle" style="height:180px;margin-top:8px;"></pre>
+                    </div>
+
                     <div id="playerManagementActions" class="spaced-top" style="display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
                         <input id="actionReason" placeholder="Reason for action" style="grid-column:1 / -1;">
                         <input id="actionDuration" type="number" min="1" value="60" placeholder="Duration (minutes)">
@@ -127,6 +138,7 @@
     let allPlayers = [];
     let selectedUuid = null;
     let playerManagementAvailable = false;
+    let luckPermsAvailable = false;
     const avatarCache = new Map();
 
     async function api(url, options) {
@@ -156,6 +168,26 @@
 
         const actions = document.getElementById('playerManagementActions');
         actions.style.display = playerManagementAvailable ? 'grid' : 'none';
+    }
+
+    async function detectLuckPermsExtension() {
+        const section = document.getElementById('luckPermsSection');
+        luckPermsAvailable = false;
+        section.style.display = 'none';
+
+        try {
+            const probeUuid = selectedUuid || (allPlayers.length > 0 ? allPlayers[0].uuid : null);
+            if (!probeUuid) {
+                return;
+            }
+
+            const data = await api(`/api/extensions/luckperms/player/${encodeURIComponent(probeUuid)}`);
+            luckPermsAvailable = data.available === true;
+        } catch {
+            luckPermsAvailable = false;
+        }
+
+        section.style.display = luckPermsAvailable ? 'block' : 'none';
     }
 
     function formatDate(timestamp) {
@@ -306,6 +338,48 @@
 
         applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username);
         await loadMuteState(profile.uuid);
+        await loadLuckPermsState(profile.uuid);
+    }
+
+    async function loadLuckPermsState(uuid) {
+        const section = document.getElementById('luckPermsSection');
+        if (!luckPermsAvailable) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        document.getElementById('lpPrimaryGroup').textContent = '-';
+        document.getElementById('lpPrefixSuffix').textContent = '-';
+        document.getElementById('lpGroups').textContent = '-';
+        document.getElementById('lpPermissionsMeta').textContent = 'Loading...';
+        document.getElementById('lpPermissions').textContent = '';
+
+        try {
+            const data = await api(`/api/extensions/luckperms/player/${encodeURIComponent(uuid)}`);
+            if (!data.available) {
+                section.style.display = 'none';
+                return;
+            }
+
+            const groups = Array.isArray(data.groups) ? data.groups : [];
+            const permissions = Array.isArray(data.permissions) ? data.permissions : [];
+
+            document.getElementById('lpPrimaryGroup').textContent = data.primaryGroup || '-';
+            document.getElementById('lpPrefixSuffix').textContent = `${data.prefix || '-'} / ${data.suffix || '-'}`;
+            document.getElementById('lpGroups').textContent = groups.length > 0 ? groups.join(', ') : '-';
+
+            const totalPermissions = Number(data.permissionsCount) || permissions.length;
+            const truncated = data.permissionsTruncated === true;
+            document.getElementById('lpPermissionsMeta').textContent = truncated
+                ? `${permissions.length} shown of ${totalPermissions}`
+                : `${totalPermissions} permission(s)`;
+            document.getElementById('lpPermissions').textContent = permissions.length > 0
+                ? permissions.join('\n')
+                : 'No granted permissions';
+        } catch {
+            section.style.display = 'none';
+        }
     }
 
     function selectedPlayerName() {
@@ -419,6 +493,7 @@
         try {
             initSidebarCategories();
             await Promise.all([loadMe(), detectPlayerManagementExtension(), loadPlayerList()]);
+            await detectLuckPermsExtension();
             if (allPlayers.length > 0) {
                 selectedUuid = allPlayers[0].uuid;
                 renderPlayerDirectory();

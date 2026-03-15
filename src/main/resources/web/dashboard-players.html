@@ -71,6 +71,16 @@
                         <div class="profile-field"><span>Country</span><strong id="profileCountry">-</strong></div>
                     </div>
 
+                    <div id="playerStatsSection" class="card spaced-top" style="display:none;padding:12px;">
+                        <h3 style="margin:0 0 8px;">Player Stats</h3>
+                        <div class="profile-grid">
+                            <div class="profile-field"><span>Kills</span><strong id="statsKills">-</strong></div>
+                            <div class="profile-field"><span>Deaths</span><strong id="statsDeaths">-</strong></div>
+                            <div class="profile-field"><span>Money</span><strong id="statsMoney">-</strong></div>
+                            <div class="profile-field"><span>Economy Provider</span><strong id="statsEconomyProvider">-</strong></div>
+                        </div>
+                    </div>
+
                     <div id="luckPermsSection" class="card spaced-top" style="display:none;padding:12px;">
                         <h3 style="margin:0 0 8px;">LuckPerms</h3>
                         <div class="profile-grid">
@@ -139,6 +149,7 @@
     let selectedUuid = null;
     let playerManagementAvailable = false;
     let luckPermsAvailable = false;
+    let playerStatsAvailable = false;
     const avatarCache = new Map();
 
     async function api(url, options) {
@@ -188,6 +199,26 @@
         }
 
         section.style.display = luckPermsAvailable ? 'block' : 'none';
+    }
+
+    async function detectPlayerStatsExtension() {
+        const section = document.getElementById('playerStatsSection');
+        playerStatsAvailable = false;
+        section.style.display = 'none';
+
+        try {
+            const probeUuid = selectedUuid || (allPlayers.length > 0 ? allPlayers[0].uuid : null);
+            if (!probeUuid) {
+                return;
+            }
+
+            const data = await api(`/api/extensions/player-stats/player/${encodeURIComponent(probeUuid)}`);
+            playerStatsAvailable = data.available === true;
+        } catch {
+            playerStatsAvailable = false;
+        }
+
+        section.style.display = playerStatsAvailable ? 'block' : 'none';
     }
 
     function formatDate(timestamp) {
@@ -338,7 +369,43 @@
 
         applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username);
         await loadMuteState(profile.uuid);
+        await loadPlayerStats(profile.uuid);
         await loadLuckPermsState(profile.uuid);
+    }
+
+    async function loadPlayerStats(uuid) {
+        const section = document.getElementById('playerStatsSection');
+        if (!playerStatsAvailable) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        document.getElementById('statsKills').textContent = '-';
+        document.getElementById('statsDeaths').textContent = '-';
+        document.getElementById('statsMoney').textContent = '-';
+        document.getElementById('statsEconomyProvider').textContent = '-';
+
+        try {
+            const data = await api(`/api/extensions/player-stats/player/${encodeURIComponent(uuid)}`);
+            if (!data.available) {
+                section.style.display = 'none';
+                return;
+            }
+
+            document.getElementById('statsKills').textContent = String(data.kills ?? 0);
+            document.getElementById('statsDeaths').textContent = String(data.deaths ?? 0);
+
+            if (data.economyAvailable) {
+                document.getElementById('statsMoney').textContent = data.balanceFormatted || '-';
+                document.getElementById('statsEconomyProvider').textContent = data.economyProvider || '-';
+            } else {
+                document.getElementById('statsMoney').textContent = 'Economy not available';
+                document.getElementById('statsEconomyProvider').textContent = '-';
+            }
+        } catch {
+            section.style.display = 'none';
+        }
     }
 
     async function loadLuckPermsState(uuid) {
@@ -493,6 +560,7 @@
         try {
             initSidebarCategories();
             await Promise.all([loadMe(), detectPlayerManagementExtension(), loadPlayerList()]);
+            await detectPlayerStatsExtension();
             await detectLuckPermsExtension();
             if (allPlayers.length > 0) {
                 selectedUuid = allPlayers[0].uuid;

@@ -65,3 +65,26 @@
 ### Permissions
 
 - Web route uses panel permission `VIEW_DASHBOARD`.
+
+---
+
+## 4) Player Stats Extension
+
+- **Jar:** `MinePanel-Extension-PlayerStats-<version>.jar`
+- **Extension ID:** `player-stats`
+- **Purpose:** Show profile stats in Players tab (kills, deaths, economy balance).
+
+### Features
+
+- Provides per-player kills and deaths.
+- Optionally provides money/balance if a Vault-compatible economy provider is available.
+- Displays economy provider name when present.
+
+### Requirements
+
+- Economy data requires an installed Vault-compatible provider (for example Vault/VaultUnlocked-backed economy).
+
+### Permissions
+
+- Web route uses panel permission `VIEW_DASHBOARD`.
+

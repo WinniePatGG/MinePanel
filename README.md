@@ -80,6 +80,8 @@ Use `integrations.github.token` (or environment variable `MINEPANEL_GITHUB_TOKEN
   - `build/libs/extensions/MinePanel-Extension-PlayerManagement-<version>.jar`
 - LuckPerms extension jar:
   - `build/libs/extensions/MinePanel-Extension-LuckPerms-<version>.jar`
+- Player Stats extension jar:
+  - `build/libs/extensions/MinePanel-Extension-PlayerStats-<version>.jar`
 
 ## Installation
 
@@ -113,6 +115,8 @@ This repository can build two extension jars:
   - Adds moderation/mute related player-management features.
 - `MinePanel-Extension-LuckPerms-*`
   - Adds LuckPerms player details in Players tab (groups, permissions, prefix/suffix).
+- `MinePanel-Extension-PlayerStats-*`
+  - Adds player kills, deaths and economy balance (if Vault-compatible economy is present).
 
 ## Writing Third-Party Extensions
 

@@ -4,6 +4,7 @@ import com.google.gson.*;
 import de.winniepat.minePanel.MinePanel;
 import de.winniepat.minePanel.auth.*;
 import de.winniepat.minePanel.config.WebPanelConfig;
+import de.winniepat.minePanel.extensions.*;
 import de.winniepat.minePanel.integrations.*;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
@@ -58,6 +59,7 @@ public final class WebPanelServer {
     private final PanelLogger panelLogger;
     private final ServerLogService serverLogService;
     private final BootstrapService bootstrapService;
+    private final ExtensionManager extensionManager;
     private final Gson gson = new Gson();
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Deque<MetricSample> overviewSamples = new ArrayDeque<>();
@@ -75,7 +77,8 @@ public final class WebPanelServer {
             DiscordWebhookService discordWebhookService,
             PanelLogger panelLogger,
             ServerLogService serverLogService,
-            BootstrapService bootstrapService
+            BootstrapService bootstrapService,
+            ExtensionManager extensionManager
     ) {
         this.plugin = plugin;
         this.config = config;
@@ -89,6 +92,7 @@ public final class WebPanelServer {
         this.panelLogger = panelLogger;
         this.serverLogService = serverLogService;
         this.bootstrapService = bootstrapService;
+        this.extensionManager = extensionManager;
     }
 
     public void start() {
@@ -183,6 +187,11 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-themes.html");
         });
 
+        get("/dashboard/reports", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-reports.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return ResourceLoader.loadUtf8Text("/web/panel.css");
@@ -203,6 +212,7 @@ public final class WebPanelServer {
             post("/login", (request, response) -> handleLogin(request, response));
             post("/logout", (request, response) -> handleLogout(request, response));
             get("/me", (request, response) -> handleMe(request, response));
+            get("/extensions/navigation", (request, response) -> handleExtensionNavigation(request, response));
             get("/users", (request, response) -> handleListUsers(request, response));
             post("/users", (request, response) -> handleCreateUser(request, response));
             post("/users/:id/role", (request, response) -> handleUpdateRole(request, response));
@@ -225,6 +235,8 @@ public final class WebPanelServer {
             get("/integrations/discord-webhook", (request, response) -> handleGetDiscordWebhook(request, response));
             post("/integrations/discord-webhook", (request, response) -> handleSaveDiscordWebhook(request, response));
         });
+
+        extensionManager.registerWebRoutes(new ExtensionSparkRegistry());
 
         startOverviewSampler();
         awaitInitialization();
@@ -1694,6 +1706,43 @@ public final class WebPanelServer {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String handleExtensionNavigation(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+
+        List<Map<String, Object>> tabs = extensionManager.navigationTabs().stream()
+                .map(tab -> Map.<String, Object>of(
+                        "category", tab.category(),
+                        "label", tab.label(),
+                        "path", tab.path()
+                ))
+                .toList();
+
+        return json(response, 200, Map.of("tabs", tabs));
+    }
+
+    private final class ExtensionSparkRegistry implements ExtensionWebRegistry {
+
+        @Override
+        public void get(String path, PanelPermission permission, ExtensionRouteHandler handler) {
+            spark.Spark.get(path, (request, response) -> invokeExtensionHandler(request, response, permission, handler));
+        }
+
+        @Override
+        public void post(String path, PanelPermission permission, ExtensionRouteHandler handler) {
+            spark.Spark.post(path, (request, response) -> invokeExtensionHandler(request, response, permission, handler));
+        }
+
+        @Override
+        public String json(Response response, int status, Map<String, Object> payload) {
+            return WebPanelServer.this.json(response, status, payload);
+        }
+
+        private Object invokeExtensionHandler(Request request, Response response, PanelPermission permission, ExtensionRouteHandler handler) throws Exception {
+            PanelUser user = requireUser(request, permission);
+            return handler.handle(request, response, user);
+        }
     }
 
     private record LoginPayload(String username, String password) {

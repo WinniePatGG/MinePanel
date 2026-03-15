@@ -29,10 +29,65 @@ dependencies {
 
 tasks.named('shadowJar') {
     archiveClassifier.set('')
+    // Core jar stays extension-agnostic; concrete extensions are shipped as separate jars.
+    exclude('de/winniepat/minePanel/extensions/reports/**')
+    exclude('de/winniepat/minePanel/extensions/playermanagement/**')
+}
+
+def extensionOutputDir = layout.buildDirectory.dir('libs/extensions')
+
+tasks.register('reportsExtensionJar', Jar) {
+    group = 'build'
+    description = 'Builds the MinePanel reports extension jar.'
+    dependsOn(tasks.named('classes'))
+
+    archiveBaseName.set('MinePanel-Extension-Reports')
+    archiveVersion.set(project.version.toString())
+    destinationDirectory.set(extensionOutputDir)
+
+    from(sourceSets.main.output) {
+        include('de/winniepat/minePanel/extensions/reports/**')
+    }
+
+    from(resources.text.fromString('de.winniepat.minePanel.extensions.reports.ReportSystemExtension\n')) {
+        into('META-INF/services')
+        rename { 'de.winniepat.minePanel.extensions.MinePanelExtension' }
+    }
+}
+
+tasks.register('playerManagementExtensionJar', Jar) {
+    group = 'build'
+    description = 'Builds the MinePanel player-management extension jar.'
+    dependsOn(tasks.named('classes'))
+
+    archiveBaseName.set('MinePanel-Extension-PlayerManagement')
+    archiveVersion.set(project.version.toString())
+    destinationDirectory.set(extensionOutputDir)
+
+    from(sourceSets.main.output) {
+        include('de/winniepat/minePanel/extensions/playermanagement/**')
+    }
+
+    from(resources.text.fromString('de.winniepat.minePanel.extensions.playermanagement.PlayerManagementExtension\n')) {
+        into('META-INF/services')
+        rename { 'de.winniepat.minePanel.extensions.MinePanelExtension' }
+    }
+}
+
+tasks.register('installExtensionsToRunServer', Copy) {
+    group = 'build'
+    description = 'Copies built extension jars into run/plugins/MinePanel/extensions for local testing.'
+    dependsOn(tasks.named('reportsExtensionJar'), tasks.named('playerManagementExtensionJar'))
+
+    from(extensionOutputDir)
+    include('*.jar')
+    into(layout.projectDirectory.dir('run/plugins/MinePanel/extensions'))
 }
 
 tasks.named('assemble') {
     dependsOn(tasks.named('shadowJar'))
+    dependsOn(tasks.named('reportsExtensionJar'))
+    dependsOn(tasks.named('playerManagementExtensionJar'))
 }
 
 tasks {

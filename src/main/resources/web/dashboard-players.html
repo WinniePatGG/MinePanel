@@ -58,6 +58,7 @@
                                 <span id="profileStatusText" class="profile-status"></span>
                             </div>
                             <div id="profileUuid" class="profile-uuid"></div>
+                            <div id="profileMuteState" class="profile-uuid" style="margin-top:6px;">Mute: -</div>
                         </div>
                     </div>
 
@@ -68,6 +69,17 @@
                         <div class="profile-field"><span>Total sessions</span><strong id="profileSessions">-</strong></div>
                         <div class="profile-field"><span>IP Address</span><strong id="profileIp">-</strong></div>
                         <div class="profile-field"><span>Country</span><strong id="profileCountry">-</strong></div>
+                    </div>
+
+                    <div id="playerManagementActions" class="spaced-top" style="display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+                        <input id="actionReason" placeholder="Reason for action" style="grid-column:1 / -1;">
+                        <input id="actionDuration" type="number" min="1" value="60" placeholder="Duration (minutes)">
+                        <button id="kickButton" class="secondary">Kick</button>
+                        <button id="tempBanButton">Temp Ban</button>
+                        <button id="banButton">Ban</button>
+                        <button id="unbanButton" class="secondary">Unban</button>
+                        <button id="muteButton">Mute</button>
+                        <button id="unmuteButton" class="secondary">Unmute</button>
                     </div>
                 </div>
             </div>
@@ -114,6 +126,7 @@
 
     let allPlayers = [];
     let selectedUuid = null;
+    let playerManagementAvailable = false;
     const avatarCache = new Map();
 
     async function api(url, options) {
@@ -126,6 +139,23 @@
     async function loadMe() {
         const data = await api('/api/me');
         document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function detectPlayerManagementExtension() {
+        try {
+            const response = await fetch('/api/extensions/player-management/mute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await response.json();
+            playerManagementAvailable = data.error !== 'not_found';
+        } catch {
+            playerManagementAvailable = false;
+        }
+
+        const actions = document.getElementById('playerManagementActions');
+        actions.style.display = playerManagementAvailable ? 'grid' : 'none';
     }
 
     function formatDate(timestamp) {
@@ -229,6 +259,30 @@
         });
     }
 
+    async function loadMuteState(uuid) {
+        const muteState = document.getElementById('profileMuteState');
+        if (!playerManagementAvailable) {
+            muteState.textContent = 'Mute: extension not installed';
+            return;
+        }
+        muteState.textContent = 'Mute: -';
+        try {
+            const data = await api(`/api/extensions/player-management/mute/${encodeURIComponent(uuid)}`);
+            if (!data.muted) {
+                muteState.textContent = 'Mute: not muted';
+                return;
+            }
+
+            if (data.expiresAt) {
+                muteState.textContent = `Mute: active until ${new Date(Number(data.expiresAt)).toLocaleString()} (${data.reason || 'No reason'})`;
+            } else {
+                muteState.textContent = `Mute: active permanently (${data.reason || 'No reason'})`;
+            }
+        } catch {
+            muteState.textContent = 'Mute: unavailable';
+        }
+    }
+
     async function loadPlayerProfile(uuid) {
         const data = await api(`/api/players/profile/${encodeURIComponent(uuid)}`);
         const profile = data.profile;
@@ -251,7 +305,108 @@
         document.getElementById('profileCountry').textContent = profile.country || 'Unknown';
 
         applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username);
+        await loadMuteState(profile.uuid);
     }
+
+    function selectedPlayerName() {
+        if (!selectedUuid) return '';
+        const player = allPlayers.find(x => x.uuid === selectedUuid);
+        return player ? player.username : '';
+    }
+
+    function actionReason(defaultValue) {
+        const raw = document.getElementById('actionReason').value.trim();
+        return raw || defaultValue;
+    }
+
+    function actionDuration() {
+        const parsed = Number(document.getElementById('actionDuration').value);
+        if (!Number.isFinite(parsed)) return 60;
+        return Math.max(1, Math.min(43200, Math.round(parsed)));
+    }
+
+    async function runPlayerAction(handler) {
+        if (!selectedUuid) {
+            alert('Select a player first.');
+            return;
+        }
+        await handler();
+        await loadPlayerList();
+        await loadPlayerProfile(selectedUuid);
+    }
+
+    document.getElementById('kickButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api(`/api/players/${encodeURIComponent(selectedUuid)}/kick`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: actionReason('Kicked by panel moderator') })
+            });
+        });
+    });
+
+    document.getElementById('tempBanButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api(`/api/players/${encodeURIComponent(selectedUuid)}/temp-ban`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: selectedPlayerName(),
+                    durationMinutes: actionDuration(),
+                    reason: actionReason('Temporarily banned by panel moderator')
+                })
+            });
+        });
+    });
+
+    document.getElementById('banButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/players/ban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uuid: selectedUuid,
+                    username: selectedPlayerName(),
+                    reason: actionReason('Banned by panel moderator')
+                })
+            });
+        });
+    });
+
+    document.getElementById('unbanButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/players/unban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid: selectedUuid, username: selectedPlayerName() })
+            });
+        });
+    });
+
+    document.getElementById('muteButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/extensions/player-management/mute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uuid: selectedUuid,
+                    username: selectedPlayerName(),
+                    durationMinutes: actionDuration(),
+                    reason: actionReason('Muted by panel moderator')
+                })
+            });
+        });
+    });
+
+    document.getElementById('unmuteButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/extensions/player-management/unmute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid: selectedUuid, username: selectedPlayerName() })
+            });
+        });
+    });
 
     document.getElementById('playerSearch').addEventListener('input', renderPlayerDirectory);
 
@@ -263,7 +418,7 @@
     (async () => {
         try {
             initSidebarCategories();
-            await Promise.all([loadMe(), loadPlayerList()]);
+            await Promise.all([loadMe(), detectPlayerManagementExtension(), loadPlayerList()]);
             if (allPlayers.length > 0) {
                 selectedUuid = allPlayers[0].uuid;
                 renderPlayerDirectory();

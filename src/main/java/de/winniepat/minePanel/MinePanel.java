@@ -2,6 +2,7 @@ package de.winniepat.minePanel;
 
 import de.winniepat.minePanel.auth.*;
 import de.winniepat.minePanel.config.WebPanelConfig;
+import de.winniepat.minePanel.extensions.*;
 import de.winniepat.minePanel.integrations.*;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
@@ -28,6 +29,8 @@ public final class MinePanel extends JavaPlugin {
     private LogRepository logRepository;
     private PanelLogger panelLogger;
     private PlayerActivityRepository playerActivityRepository;
+    private ExtensionManager extensionManager;
+    private ExtensionCommandRegistry extensionCommandRegistry;
 
     private record StartupContext(
             UserRepository userRepository,
@@ -35,7 +38,8 @@ public final class MinePanel extends JavaPlugin {
             SessionService sessionService,
             PasswordHasher passwordHasher,
             ServerLogService serverLogService,
-            BootstrapService bootstrapService
+            BootstrapService bootstrapService,
+            ExtensionManager extensionManager
     ) {}
 
     @Override
@@ -74,14 +78,36 @@ public final class MinePanel extends JavaPlugin {
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
 
+        this.extensionManager = initializeExtensions(knownPlayerRepository);
+
         return new StartupContext(
                 userRepository,
                 knownPlayerRepository,
                 sessionService,
                 passwordHasher,
                 serverLogService,
-                bootstrapService
+                bootstrapService,
+                extensionManager
         );
+    }
+
+    private ExtensionManager initializeExtensions(KnownPlayerRepository knownPlayerRepository) {
+        this.extensionCommandRegistry = new BukkitExtensionCommandRegistry(this);
+        ExtensionContext context = new ExtensionContext(
+                this,
+                database,
+                panelLogger,
+                knownPlayerRepository,
+                playerActivityRepository,
+                extensionCommandRegistry
+        );
+        ExtensionManager manager = new ExtensionManager(this, context);
+
+
+        Path extensionDirectory = getDataFolder().toPath().resolve("extensions");
+        manager.loadFromDirectory(extensionDirectory);
+        manager.enableAll();
+        return manager;
     }
 
     private void announceBootstrapToken(BootstrapService bootstrapService) {
@@ -136,7 +162,8 @@ public final class MinePanel extends JavaPlugin {
                 discordWebhookService,
                 panelLogger,
                 startupContext.serverLogService(),
-                startupContext.bootstrapService()
+                startupContext.bootstrapService(),
+                startupContext.extensionManager()
         );
         this.webPanelServer.start();
     }
@@ -167,6 +194,10 @@ public final class MinePanel extends JavaPlugin {
     public void onDisable() {
         if (webPanelServer != null) {
             webPanelServer.stop();
+        }
+
+        if (extensionManager != null) {
+            extensionManager.disableAll();
         }
 
         if (playerActivityRepository != null) {

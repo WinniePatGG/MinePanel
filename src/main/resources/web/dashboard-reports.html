@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Reports</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+                <a class="side-link active" href="/dashboard/reports">Reports</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Reports</h1>
+        <div class="toolbar">
+            <select id="reportStatusFilter" style="width:auto;min-width:180px;">
+                <option value="">All statuses</option>
+                <option value="OPEN">Open</option>
+                <option value="RESOLVED">Resolved</option>
+            </select>
+            <button id="refreshReports" class="secondary">Refresh</button>
+        </div>
+
+        <section class="card">
+            <h2>Player Reports</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Reporter</th>
+                    <th>Suspect</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="reportsBody"></tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const expanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expanded);
+                toggle.classList.toggle('expanded', expanded);
+                savedState[category] = expanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    function formatDate(timestamp) {
+        if (!timestamp || Number(timestamp) <= 0) return '-';
+        return new Date(Number(timestamp)).toLocaleString();
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function loadReports() {
+        const status = document.getElementById('reportStatusFilter').value;
+        const url = status ? `/api/extensions/reports?status=${encodeURIComponent(status)}` : '/api/extensions/reports';
+        const data = await api(url);
+
+        const body = document.getElementById('reportsBody');
+        body.innerHTML = '';
+
+        if (!Array.isArray(data.reports) || data.reports.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 7;
+            cell.textContent = 'No reports found';
+            row.appendChild(cell);
+            body.appendChild(row);
+            return;
+        }
+
+        data.reports.forEach(report => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>#${report.id}</td>
+                <td>${report.reporterName}</td>
+                <td>${report.suspectName}</td>
+                <td>${report.reason}</td>
+                <td>${report.status}</td>
+                <td>${formatDate(report.createdAt)}</td>
+                <td></td>
+            `;
+
+            const actionsCell = row.lastElementChild;
+            if (report.status === 'OPEN') {
+                const resolveButton = document.createElement('button');
+                resolveButton.className = 'secondary';
+                resolveButton.style.width = 'auto';
+                resolveButton.textContent = 'Resolve';
+                resolveButton.addEventListener('click', async () => {
+                    await api(`/api/extensions/reports/${report.id}/resolve`, { method: 'POST' });
+                    await loadReports();
+                });
+
+                const banButton = document.createElement('button');
+                banButton.style.width = 'auto';
+                banButton.textContent = 'Ban 60m';
+                banButton.addEventListener('click', async () => {
+                    await api(`/api/extensions/reports/${report.id}/ban`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ durationMinutes: 60, reason: `Auto-ban from report #${report.id}` })
+                    });
+                    await loadReports();
+                });
+
+                actionsCell.appendChild(resolveButton);
+                actionsCell.appendChild(document.createTextNode(' '));
+                actionsCell.appendChild(banButton);
+            } else {
+                actionsCell.textContent = '-';
+            }
+
+            body.appendChild(row);
+        });
+    }
+
+    document.getElementById('refreshReports').addEventListener('click', loadReports);
+    document.getElementById('reportStatusFilter').addEventListener('change', loadReports);
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadReports();
+            setInterval(() => loadReports().catch(() => {}), 5000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

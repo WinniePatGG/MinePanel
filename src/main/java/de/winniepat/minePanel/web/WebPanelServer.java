@@ -1783,73 +1783,359 @@ public final class WebPanelServer {
     private String handleExtensionStatus(Request request, Response response) {
         requireUser(request, PanelPermission.MANAGE_USERS);
 
+        String channel = normalizeReleaseChannel(request.queryParams("channel"));
         List<Map<String, Object>> installed = extensionManager.installedExtensions();
         List<Map<String, Object>> localArtifacts = extensionManager.availableArtifacts();
-        List<Map<String, Object>> availableExtensions = loadAvailableExtensionsFromModrinth();
+        List<Map<String, Object>> availableExtensions = loadAvailableExtensionsFromGitHub(channel);
+
+        Map<String, ExtensionVersionInfo> latestByExtensionId = new HashMap<>();
+        for (Map<String, Object> extension : availableExtensions) {
+            String extensionId = normalizeExtensionKey(String.valueOf(extension.getOrDefault("extensionId", "")));
+            if (extensionId.isBlank()) {
+                continue;
+            }
+
+            String latestVersionLabel = String.valueOf(extension.getOrDefault("version", ""));
+            VersionToken latestVersion = parseVersionToken(latestVersionLabel);
+            ExtensionVersionInfo existing = latestByExtensionId.get(extensionId);
+            if (existing == null || compareVersionTokens(latestVersion, existing.versionToken()) > 0) {
+                latestByExtensionId.put(extensionId, new ExtensionVersionInfo(latestVersionLabel, latestVersion));
+            }
+        }
+
+        List<Map<String, Object>> installedWithStatus = new ArrayList<>();
+        for (Map<String, Object> installedEntry : installed) {
+            Map<String, Object> row = new HashMap<>(installedEntry);
+            String source = String.valueOf(installedEntry.getOrDefault("source", ""));
+            String extensionId = normalizeExtensionKey(String.valueOf(installedEntry.getOrDefault("id", "")));
+            String installedVersionLabel = extractVersionLabel(source);
+            VersionToken installedVersion = parseVersionToken(installedVersionLabel);
+
+            ExtensionVersionInfo latest = latestByExtensionId.get(extensionId);
+            if (latest == null) {
+                row.put("status", "unknown");
+                row.put("outdated", false);
+                row.put("statusText", "No release asset found");
+            } else {
+                int comparison = compareVersionTokens(installedVersion, latest.versionToken());
+                if (comparison < 0) {
+                    row.put("status", "outdated");
+                    row.put("outdated", true);
+                    row.put("statusText", "Outdated (latest: " + latest.versionLabel() + ")");
+                    row.put("latestVersion", latest.versionLabel());
+                } else if (comparison >= 0) {
+                    row.put("status", "up_to_date");
+                    row.put("outdated", false);
+                    row.put("statusText", "Up to date");
+                    row.put("latestVersion", latest.versionLabel());
+                } else {
+                    row.put("status", "unknown");
+                    row.put("outdated", false);
+                    row.put("statusText", "Version unknown (latest: " + latest.versionLabel() + ")");
+                    row.put("latestVersion", latest.versionLabel());
+                }
+            }
+            installedWithStatus.add(row);
+        }
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("installed", installed);
+        payload.put("installed", installedWithStatus);
         payload.put("localArtifacts", localArtifacts);
         payload.put("availableExtensions", availableExtensions);
-        payload.put("installedCount", installed.size());
+        payload.put("channel", channel);
+        payload.put("installedCount", installedWithStatus.size());
         payload.put("localArtifactCount", localArtifacts.size());
         payload.put("availableExtensionCount", availableExtensions.size());
         return json(response, 200, payload);
     }
 
-    private List<Map<String, Object>> loadAvailableExtensionsFromModrinth() {
+    private String normalizeReleaseChannel(String rawChannel) {
+        if (rawChannel == null || rawChannel.isBlank()) {
+            return "release";
+        }
+
+        String normalized = rawChannel.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "release", "prerelease" -> normalized;
+            default -> "release";
+        };
+    }
+
+    private List<Map<String, Object>> loadAvailableExtensionsFromGitHub(String channel) {
         try {
-            final String trustedAuthor = "winniepatgg";
-            String query = URLEncoder.encode("minepanel extension", StandardCharsets.UTF_8);
-            String facets = URLEncoder.encode("[[\"project_type:plugin\"]]", StandardCharsets.UTF_8);
-            JsonObject root = requestJson("https://api.modrinth.com/v2/search?query=" + query + "&limit=50&facets=" + facets);
-            JsonArray hits = root.getAsJsonArray("hits");
-            if (hits == null) {
+            JsonArray releases = requestGitHubReleases();
+            JsonObject release = selectLatestReleaseByChannel(releases, channel);
+            if (release == null) {
+                return List.of();
+            }
+
+            String releaseLabel = firstNonBlank(stringValue(release, "name"), stringValue(release, "tag_name"), "latest");
+            String releaseUrl = stringValue(release, "html_url");
+            boolean prerelease = release.has("prerelease") && release.get("prerelease").getAsBoolean();
+
+            JsonArray assets = release.getAsJsonArray("assets");
+            if (assets == null) {
                 return List.of();
             }
 
             List<Map<String, Object>> rows = new ArrayList<>();
-            for (JsonElement element : hits) {
+            for (JsonElement element : assets) {
                 if (element == null || !element.isJsonObject()) {
                     continue;
                 }
 
-                JsonObject hit = element.getAsJsonObject();
-                String title = stringValue(hit, "title");
-                String description = stringValue(hit, "description");
-                String slug = stringValue(hit, "slug");
-                String projectId = stringValue(hit, "project_id");
-                String author = stringValue(hit, "author");
-                if (isBlank(slug) || isBlank(projectId)) {
+                JsonObject asset = element.getAsJsonObject();
+                String fileName = stringValue(asset, "name");
+                String downloadUrl = stringValue(asset, "browser_download_url");
+                if (isBlank(fileName) || isBlank(downloadUrl)) {
                     continue;
                 }
 
-                if (isBlank(author) || !author.trim().equalsIgnoreCase(trustedAuthor)) {
+                String lowered = fileName.toLowerCase(Locale.ROOT);
+                if (!lowered.endsWith(".jar") || !lowered.contains("minepanel-extension-")) {
                     continue;
                 }
 
-                String searchable = (title + " " + description).toLowerCase(Locale.ROOT);
-                if (!searchable.contains("minepanel")) {
+                String extensionId = parseExtensionId(fileName);
+                if (isBlank(extensionId)) {
                     continue;
                 }
 
-                String projectUrl = "https://modrinth.com/plugin/" + slug;
                 rows.add(Map.of(
-                        "id", projectId,
-                        "name", firstNonBlank(title, slug),
-                        "description", description,
-                        "author", author,
-                        "iconUrl", stringValue(hit, "icon_url"),
-                        "projectUrl", projectUrl,
-                        "downloadUrl", projectUrl + "/versions"
+                        "id", fileName,
+                        "name", readableExtensionName(fileName),
+                        "description", "Asset from " + releaseLabel,
+                        "release", releaseLabel,
+                        "prerelease", prerelease,
+                        "projectUrl", releaseUrl,
+                        "downloadUrl", downloadUrl,
+                        "extensionId", extensionId,
+                        "version", releaseLabel
                 ));
             }
 
             rows.sort(Comparator.comparing(row -> String.valueOf(row.getOrDefault("name", "")), String.CASE_INSENSITIVE_ORDER));
             return rows;
         } catch (Exception exception) {
-            plugin.getLogger().warning("Could not load extension catalog from Modrinth: " + exception.getMessage());
+            plugin.getLogger().warning("Could not load extension catalog from GitHub: " + exception.getMessage());
             return List.of();
+        }
+    }
+
+    private JsonArray requestGitHubReleases() {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create("https://api.github.com/repos/WinniePatGG/MinePanel/releases?per_page=20"))
+                    .header("Accept", "application/vnd.github+json")
+                    .header("User-Agent", "MinePanel")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() >= 300) {
+                throw new IllegalStateException("GitHub API status " + response.statusCode());
+            }
+
+            JsonElement parsed = gson.fromJson(response.body(), JsonElement.class);
+            if (parsed == null || !parsed.isJsonArray()) {
+                return new JsonArray();
+            }
+            return parsed.getAsJsonArray();
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not query GitHub releases", exception);
+        }
+    }
+
+    private JsonObject selectLatestReleaseByChannel(JsonArray releases, String channel) {
+        if (releases == null || releases.isEmpty()) {
+            return null;
+        }
+
+        boolean wantsPrerelease = "prerelease".equalsIgnoreCase(channel);
+        JsonObject selected = null;
+        Instant selectedPublishedAt = Instant.EPOCH;
+
+        for (JsonElement element : releases) {
+            if (element == null || !element.isJsonObject()) {
+                continue;
+            }
+
+            JsonObject release = element.getAsJsonObject();
+            boolean draft = release.has("draft") && release.get("draft").getAsBoolean();
+            if (draft) {
+                continue;
+            }
+
+            boolean prerelease = release.has("prerelease") && release.get("prerelease").getAsBoolean();
+            if (prerelease != wantsPrerelease) {
+                continue;
+            }
+
+            Instant publishedAt;
+            try {
+                publishedAt = Instant.parse(stringValue(release, "published_at"));
+            } catch (Exception ignored) {
+                publishedAt = Instant.EPOCH;
+            }
+
+            if (selected == null || publishedAt.isAfter(selectedPublishedAt)) {
+                selected = release;
+                selectedPublishedAt = publishedAt;
+            }
+        }
+
+        return selected;
+    }
+
+    private String parseExtensionId(String fileName) {
+        if (isBlank(fileName)) {
+            return "";
+        }
+
+        String lowered = fileName.trim().toLowerCase(Locale.ROOT);
+        lowered = lowered.replace(".jar", "");
+        lowered = lowered.replaceFirst("^minepanel-extension-", "");
+        int versionSplit = lowered.lastIndexOf("-alpha-");
+        if (versionSplit > 0) {
+            lowered = lowered.substring(0, versionSplit);
+        }
+        return lowered;
+    }
+
+    private String normalizeExtensionKey(String rawValue) {
+        if (rawValue == null) {
+            return "";
+        }
+
+        return rawValue
+                .trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]", "");
+    }
+
+    private String readableExtensionName(String fileName) {
+        String id = parseExtensionId(fileName);
+        if (id.isBlank()) {
+            return fileName;
+        }
+
+        String[] parts = id.split("-");
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (part.isBlank()) {
+                continue;
+            }
+            if (!builder.isEmpty()) {
+                builder.append(' ');
+            }
+            builder.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return builder.isEmpty() ? fileName : builder.toString();
+    }
+
+    private String extractVersionLabel(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return "";
+        }
+
+        java.util.regex.Matcher alphaMatcher = java.util.regex.Pattern.compile("(?i)alpha-(\\d+)").matcher(rawValue);
+        String lastAlpha = "";
+        while (alphaMatcher.find()) {
+            lastAlpha = "alpha-" + alphaMatcher.group(1);
+        }
+        if (!lastAlpha.isBlank()) {
+            return lastAlpha;
+        }
+
+        java.util.regex.Matcher semverMatcher = java.util.regex.Pattern.compile("(?i)v?(\\d+(?:\\.\\d+)+)").matcher(rawValue);
+        String lastSemver = "";
+        while (semverMatcher.find()) {
+            lastSemver = semverMatcher.group(1);
+        }
+        return lastSemver;
+    }
+
+    private VersionToken parseVersionToken(String rawValue) {
+        String normalized = extractVersionLabel(rawValue);
+        if (normalized.isBlank()) {
+            return VersionToken.unknown();
+        }
+
+        java.util.regex.Matcher alphaMatcher = java.util.regex.Pattern.compile("(?i)alpha-(\\d+)").matcher(normalized);
+        if (alphaMatcher.matches()) {
+            try {
+                return VersionToken.alpha(Integer.parseInt(alphaMatcher.group(1)));
+            } catch (NumberFormatException ignored) {
+                return VersionToken.unknown();
+            }
+        }
+
+        java.util.regex.Matcher semverMatcher = java.util.regex.Pattern.compile("(?i)v?(\\d+(?:\\.\\d+)+)").matcher(normalized);
+        if (semverMatcher.matches()) {
+            String[] parts = semverMatcher.group(1).split("\\.");
+            List<Integer> values = new ArrayList<>();
+            for (String part : parts) {
+                try {
+                    values.add(Integer.parseInt(part));
+                } catch (NumberFormatException ignored) {
+                    return VersionToken.unknown();
+                }
+            }
+            return VersionToken.semver(values);
+        }
+
+        return VersionToken.unknown();
+    }
+
+    private int compareVersionTokens(VersionToken installed, VersionToken latest) {
+        if (installed == null || latest == null || installed.kind() == VersionKind.UNKNOWN || latest.kind() == VersionKind.UNKNOWN) {
+            return Integer.MIN_VALUE;
+        }
+
+        if (installed.kind() != latest.kind()) {
+            // Semantic versions are considered newer than alpha track.
+            if (installed.kind() == VersionKind.SEMVER && latest.kind() == VersionKind.ALPHA) {
+                return 1;
+            }
+            if (installed.kind() == VersionKind.ALPHA && latest.kind() == VersionKind.SEMVER) {
+                return -1;
+            }
+            return Integer.MIN_VALUE;
+        }
+
+        if (installed.kind() == VersionKind.ALPHA) {
+            return Integer.compare(installed.alphaBuild(), latest.alphaBuild());
+        }
+
+        int max = Math.max(installed.semverParts().size(), latest.semverParts().size());
+        for (int i = 0; i < max; i++) {
+            int left = i < installed.semverParts().size() ? installed.semverParts().get(i) : 0;
+            int right = i < latest.semverParts().size() ? latest.semverParts().get(i) : 0;
+            if (left != right) {
+                return Integer.compare(left, right);
+            }
+        }
+        return 0;
+    }
+
+    private record ExtensionVersionInfo(String versionLabel, VersionToken versionToken) {
+    }
+
+    private enum VersionKind {
+        UNKNOWN,
+        ALPHA,
+        SEMVER
+    }
+
+    private record VersionToken(VersionKind kind, int alphaBuild, List<Integer> semverParts) {
+        private static VersionToken unknown() {
+            return new VersionToken(VersionKind.UNKNOWN, -1, List.of());
+        }
+
+        private static VersionToken alpha(int build) {
+            return new VersionToken(VersionKind.ALPHA, build, List.of());
+        }
+
+        private static VersionToken semver(List<Integer> parts) {
+            return new VersionToken(VersionKind.SEMVER, -1, parts == null ? List.of() : List.copyOf(parts));
         }
     }
 
@@ -1951,4 +2237,3 @@ public final class WebPanelServer {
     ) {
     }
 }
-

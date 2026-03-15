@@ -6,6 +6,65 @@
     <title>MinePanel Dashboard - Extensions</title>
     <link rel="stylesheet" href="/panel.css">
     <script src="/theme.js"></script>
+    <style>
+        .ext-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            border-bottom: 1px solid transparent;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .ext-link:hover {
+            color: #9ec0ff;
+            border-bottom-color: #9ec0ff;
+        }
+
+        .ext-download {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 7px;
+            border: 1px solid var(--button-border);
+            background: var(--button-bg);
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 13px;
+            line-height: 1;
+            transition: background 0.15s ease;
+        }
+
+        .ext-download:hover {
+            background: var(--button-hover-bg);
+        }
+
+        .ext-status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--table-row-border);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .ext-status-up {
+            color: #8af0b4;
+            background: rgba(46, 204, 113, 0.18);
+            border-color: rgba(46, 204, 113, 0.5);
+        }
+
+        .ext-status-outdated {
+            color: #ffe08b;
+            background: rgba(241, 196, 15, 0.18);
+            border-color: rgba(241, 196, 15, 0.5);
+        }
+
+        .ext-status-unknown {
+            color: #c7d1ea;
+            background: rgba(127, 140, 170, 0.18);
+            border-color: rgba(127, 140, 170, 0.5);
+        }
+    </style>
 </head>
 <body>
 <div class="layout">
@@ -35,9 +94,13 @@
 
     <main class="content-area">
         <h1>Extensions</h1>
-        <p>Shows loaded extensions and jar artifacts available in the MinePanel extensions directory.</p>
+        <p>Shows loaded extensions and extension downloads from the latest GitHub release/pre-release.</p>
 
         <div class="toolbar">
+            <select id="releaseChannel" style="width:auto;min-width:180px;">
+                <option value="release">Release</option>
+                <option value="prerelease">Pre-release</option>
+            </select>
             <button id="refresh" class="secondary">Refresh</button>
         </div>
 
@@ -49,6 +112,7 @@
                     <th>ID</th>
                     <th>Name</th>
                     <th>Source</th>
+                    <th>Status</th>
                 </tr>
                 </thead>
                 <tbody id="installedBody"></tbody>
@@ -56,13 +120,13 @@
         </section>
 
         <section class="card spaced-top">
-            <h2>Available Extensions on Modrinth (<span id="availableExtensionCount">0</span>)</h2>
+            <h2>Available Extensions on GitHub (<span id="availableExtensionCount">0</span>)</h2>
             <table>
                 <thead>
                 <tr>
                     <th>Name</th>
                     <th>Description</th>
-                    <th>Author</th>
+                    <th>Release</th>
                     <th>Download</th>
                 </tr>
                 </thead>
@@ -129,14 +193,26 @@
 
         if (!Array.isArray(installed) || installed.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="3">No extensions loaded</td>';
+            row.innerHTML = '<td colspan="4">No extensions loaded</td>';
             body.appendChild(row);
             return;
         }
 
         for (const extension of installed) {
             const row = document.createElement('tr');
-            row.innerHTML = `<td>${extension.id}</td><td>${extension.displayName}</td><td>${extension.source}</td>`;
+            const status = extension.status || 'unknown';
+            const statusText = extension.statusText || 'Unknown';
+            const statusClass = status === 'outdated'
+                ? 'ext-status ext-status-outdated'
+                : (status === 'up_to_date' ? 'ext-status ext-status-up' : 'ext-status ext-status-unknown');
+            const statusMarkup = `<span class="${statusClass}">${statusText}</span>`;
+
+            row.innerHTML = `
+                <td>${extension.id}</td>
+                <td>${extension.displayName}</td>
+                <td>${extension.source}</td>
+                <td>${statusMarkup}</td>
+            `;
             body.appendChild(row);
         }
     }
@@ -147,7 +223,7 @@
 
         if (!Array.isArray(availableExtensions) || availableExtensions.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="4">No MinePanel extensions found on Modrinth</td>';
+            row.innerHTML = '<td colspan="4">No MinePanel extension assets found on GitHub releases</td>';
             body.appendChild(row);
             return;
         }
@@ -155,28 +231,37 @@
         for (const extension of availableExtensions) {
             const name = extension.name || extension.id || 'Unknown';
             const description = extension.description || '-';
-            const author = extension.author || '-';
+            const release = extension.release || '-';
             const projectUrl = extension.projectUrl || '#';
             const downloadUrl = extension.downloadUrl || projectUrl;
+            const prereleaseSuffix = extension.prerelease ? ' (pre-release)' : '';
 
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td><a href="${projectUrl}" target="_blank" rel="noopener noreferrer">${name}</a></td>
+                <td><a class="ext-link" href="${projectUrl}" target="_blank" rel="noopener noreferrer">${name}</a></td>
                 <td>${description}</td>
-                <td>${author}</td>
-                <td><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Download</a></td>
+                <td>${release}${prereleaseSuffix}</td>
+                <td><a class="ext-download" href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Download</a></td>
             `;
             body.appendChild(row);
         }
     }
 
     async function loadExtensionStatus() {
-        const status = await api('/api/extensions/status');
+        const channel = document.getElementById('releaseChannel').value || 'release';
+        const status = await api(`/api/extensions/status?channel=${encodeURIComponent(channel)}`);
+        if (status.channel) {
+            document.getElementById('releaseChannel').value = status.channel;
+        }
         document.getElementById('installedCount').textContent = String(status.installedCount || 0);
         document.getElementById('availableExtensionCount').textContent = String(status.availableExtensionCount || 0);
         renderInstalled(status.installed);
         renderAvailableExtensions(status.availableExtensions);
     }
+
+    document.getElementById('releaseChannel').addEventListener('change', async () => {
+        await loadExtensionStatus();
+    });
 
     document.getElementById('refresh').addEventListener('click', async () => {
         await loadExtensionStatus();

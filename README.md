@@ -1,87 +1,131 @@
 # MinePanel
 
-Paper plugin with an embedded admin web panel.
+![MinePanel](https://img.shields.io/badge/MinePanel-Web%20Panel%20for%20Paper-4f8cff?style=for-the-badge)
+![Java](https://img.shields.io/badge/Java-21-ff8a65?style=for-the-badge)
+![Paper](https://img.shields.io/badge/Paper-1.21.x-58d68d?style=for-the-badge)
+![Extensions](https://img.shields.io/badge/Extensions-Modular-9b59b6?style=for-the-badge)
 
-## Features
+MinePanel is a Paper plugin that runs an embedded web panel for Minecraft server administration.
 
-- Embedded web server for admin panel pages and API
-- First-launch owner bootstrap using a one-time setup token
-- Secure login with BCrypt password hashing and server-side session storage
-- User management with roles (`OWNER`, `ADMIN`, `VIEWER`) and permission checks
-- Captures in-game chat and command activity to persistent logs
-- Reads `logs/latest.log` tail for live console visibility
-- Stores panel log history in SQLite and exports a full shutdown snapshot into the server `logs` directory
-- Extension framework for loading MinePanel extensions from `plugins/MinePanel/extensions`
-- Default panel works without extensions; extension features only appear when extension jars are installed
+The core plugin provides a secure web UI (login, roles, sessions, dashboard pages, logs, users, etc.) and an extension system so extra features can be added as separate jars.
 
-## Configuration
+## What You Get
 
-`src/main/resources/config.yml` defaults:
+### Core (works without extensions)
+
+- 🖥️ Embedded HTTP server for panel pages and API.
+- 🔐 First-launch bootstrap flow to create the owner account.
+- 🛡️ Secure auth with BCrypt + server-side sessions.
+- 👥 Role/permission based panel access (`OWNER`, `ADMIN`, `VIEWER`).
+- 📜 Console page with live panel log updates and command sending.
+- 📊 Overview page with:
+  - TPS, memory, CPU cards
+  - TPS/Memory/CPU time-series charts
+  - Join/leave heatmaps (day x hour)
+- 🎮 Players page with profile details and activity info.
+- 🔌 Plugin and bans pages.
+- 🎨 Themes page.
+- 🧩 Extension management page.
+
+### Extension system
+
+- Core scans `plugins/MinePanel/extensions` on startup.
+- If no extension jars are installed, you get the default panel only.
+- If extension jars are present, their routes/tabs/features are loaded after restart.
+- Extensions are discovered via Java `ServiceLoader` using:
+  - `META-INF/services/de.winniepat.minePanel.extensions.MinePanelExtension`
+
+## Runtime Configuration
+
+Default config in `src/main/resources/config.yml`:
 
 ```yaml
 web:
   host: 127.0.0.1
   port: 8080
   sessionTtlMinutes: 120
+
 security:
   bootstrapTokenLength: 32
-
 ```
 
 ## Build
 
-```powershell
-.\gradlew.bat shadowJar
-```
-
-Output jar: `build/libs/MinePanel-<version>.jar`
-
-Build core + extension jars:
+### Build core + extension jars
 
 ```powershell
 .\gradlew.bat assemble
 ```
 
-Outputs:
-
-- Core plugin: `build/libs/MinePanel-<version>.jar`
-- Reports extension: `build/libs/extensions/MinePanel-Extension-Reports-<version>.jar`
-- Player management extension: `build/libs/extensions/MinePanel-Extension-PlayerManagement-<version>.jar`
-
-## Extensions
-
-- Core scans `plugins/MinePanel/extensions` for extension jars.
-- Loading is restart-based: drop an extension jar into `plugins/MinePanel/extensions`, restart the server, and the extension is loaded automatically.
-- External jars should provide implementations of `de.winniepat.minePanel.extensions.MinePanelExtension` via Java `ServiceLoader` (`META-INF/services/...`).
-- Extensions can register API routes and sidebar tabs and can use the provided `ExtensionContext` services.
-- Runtime commands are supported through `ExtensionContext.commandRegistry()` so extension commands become available right after restart without editing MinePanel `plugin.yml`.
-
-Minimal external extension flow:
-
-1. Build your extension jar with an implementation of `MinePanelExtension`.
-2. Add `META-INF/services/de.winniepat.minePanel.extensions.MinePanelExtension` containing your implementation class name.
-3. In `onEnable`, register commands via `context.commandRegistry().register(...)`.
-4. Optionally return `navigationTabs()` and register API routes via `registerWebRoutes(...)`.
-5. Copy jar to `plugins/MinePanel/extensions` and restart the server.
-
-Quick local install for the included extension jars:
+### Build only core shadow jar
 
 ```powershell
-.\gradlew.bat installExtensionsToRunServer
+.\gradlew.bat shadowJar
 ```
 
-This copies extension jars to `run/plugins/MinePanel/extensions`.
+## Build Outputs
 
-## First launch
+- Core plugin jar:
+  - `build/libs/MinePanel-<version>.jar`
+- Reports extension jar:
+  - `build/libs/extensions/MinePanel-Extension-Reports-<version>.jar`
+- Player-management extension jar:
+  - `build/libs/extensions/MinePanel-Extension-PlayerManagement-<version>.jar`
 
-1. Start server with plugin installed.
-2. Check server console for `First launch setup token: ...`.
-3. Open `http://127.0.0.1:8080/setup`.
-4. Enter token + owner credentials.
-5. Log in and manage users from dashboard.
+## Installation
 
-## Security note
+1. Copy core jar to your server `plugins` folder.
+2. Start server once.
+3. Check console for the bootstrap token.
+4. Open panel in browser: `http://127.0.0.1:8080` (or your configured host/port).
+5. Complete setup and create owner account.
 
-This panel is intended to run behind a reverse proxy with HTTPS in production.
-Use firewall rules to restrict direct access to the web panel port.
+## Installing Extensions
+
+1. Build or download extension jars.
+2. Put them in:
+   - `plugins/MinePanel/extensions`
+3. Restart the server.
+4. New extension tabs/features become available.
+
+## Extension Links
+
+- Modrinth author page: `https://modrinth.com/user/WinniePatGG`
+- Browse MinePanel-related plugins on Modrinth: `https://modrinth.com/plugins?query=minepanel`
+- Tip: The panel catalog already filters available extensions to projects by `WinniePatGG`.
+
+## Included Extension Artifacts in This Repo
+
+This repository can build two extension jars:
+
+- `MinePanel-Extension-Reports-*`
+  - Adds report system features.
+- `MinePanel-Extension-PlayerManagement-*`
+  - Adds moderation/mute related player-management features.
+
+## Writing Third-Party Extensions
+
+Detailed step-by-step guide:
+
+- `docs/EXTENSIONS.md`
+
+Implement `de.winniepat.minePanel.extensions.MinePanelExtension`.
+
+Typical flow:
+
+1. Implement extension class (`id`, `displayName`, lifecycle hooks).
+2. Add service descriptor file:
+   - `META-INF/services/de.winniepat.minePanel.extensions.MinePanelExtension`
+3. (Optional) Register panel routes via `registerWebRoutes(...)`.
+4. (Optional) Add sidebar tabs via `navigationTabs()`.
+5. (Optional) Register runtime commands via `ExtensionContext.commandRegistry()`.
+6. Package jar and drop into `plugins/MinePanel/extensions`.
+
+## Security Notes
+
+- Use a reverse proxy + HTTPS in production.
+- Restrict direct access to panel port (`web.port`) with firewall/network rules.
+- Treat bootstrap tokens and owner credentials as sensitive secrets.
+
+
 

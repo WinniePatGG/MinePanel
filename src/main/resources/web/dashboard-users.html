@@ -52,6 +52,7 @@
                     <tbody id="users"></tbody>
                 </table>
             </div>
+            <p id="userStatus" class="action-status"></p>
         </section>
     </main>
 </div>
@@ -100,6 +101,12 @@
         return data;
     }
 
+    function setStatus(message, isError) {
+        const status = document.getElementById('userStatus');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
     async function loadMe() {
         const data = await api('/api/me');
         document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
@@ -125,12 +132,17 @@
             button.addEventListener('click', async () => {
                 const id = button.getAttribute('data-save');
                 const role = tbody.querySelector(`select[data-id="${id}"]`).value;
-                await api(`/api/users/${id}/role`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ role })
-                });
-                await loadUsers();
+                try {
+                    await api(`/api/users/${id}/role`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ role })
+                    });
+                    await loadUsers();
+                    setStatus('User role updated successfully.', false);
+                } catch (error) {
+                    setStatus(`Failed to update user role: ${error.message}`, true);
+                }
             });
         });
 
@@ -143,31 +155,45 @@
                     return;
                 }
 
-                await api(`/api/users/${id}/delete`, {
-                    method: 'POST'
-                });
-                await loadUsers();
+                try {
+                    await api(`/api/users/${id}/delete`, {
+                        method: 'POST'
+                    });
+                    await loadUsers();
+                    setStatus(`Deleted user '${username}'.`, false);
+                } catch (error) {
+                    setStatus(`Failed to delete user '${username}': ${error.message}`, true);
+                }
             });
         });
     }
 
     document.getElementById('logout').addEventListener('click', async () => {
-        await api('/api/logout', { method: 'POST' });
-        window.location.href = '/';
+        try {
+            await api('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        } catch (error) {
+            setStatus(`Logout failed: ${error.message}`, true);
+        }
     });
 
     document.getElementById('createUser').addEventListener('click', async () => {
-        await api('/api/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                username: document.getElementById('newUsername').value,
-                password: document.getElementById('newPassword').value,
-                role: document.getElementById('newRole').value
-            })
-        });
-        document.getElementById('newPassword').value = '';
-        await loadUsers();
+        try {
+            await api('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: document.getElementById('newUsername').value,
+                    password: document.getElementById('newPassword').value,
+                    role: document.getElementById('newRole').value
+                })
+            });
+            document.getElementById('newPassword').value = '';
+            await loadUsers();
+            setStatus('User created successfully.', false);
+        } catch (error) {
+            setStatus(`Failed to create user: ${error.message}`, true);
+        }
     });
 
     (async () => {

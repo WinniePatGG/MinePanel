@@ -70,6 +70,21 @@
                 </div>
             </div>
         </section>
+
+        <section class="overview-bottom-grid spaced-top">
+            <div class="card">
+                <h2>Join Heatmap (Day x Hour)</h2>
+                <div class="chart-wrapper">
+                    <canvas id="joinHeatmapChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Leave Heatmap (Day x Hour)</h2>
+                <div class="chart-wrapper">
+                    <canvas id="leaveHeatmapChart"></canvas>
+                </div>
+            </div>
+        </section>
     </main>
 </div>
 
@@ -111,6 +126,9 @@
     }
 
     let latestHistory = { tps: [], memory: [], cpu: [] };
+    let latestHeatmaps = { join: [], leave: [], maxJoin: 0, maxLeave: 0 };
+    const heatmapRenderMeta = {};
+    const heatmapTooltip = createHeatmapTooltip();
 
     async function api(url, options) {
         const res = await fetch(url, options);
@@ -128,6 +146,12 @@
         const metrics = await api('/api/overview/metrics');
         const current = metrics.current || {};
         latestHistory = metrics.history || { tps: [], memory: [], cpu: [] };
+        latestHeatmaps = {
+            join: Array.isArray(metrics.joinHeatmap) ? metrics.joinHeatmap : [],
+            leave: Array.isArray(metrics.leaveHeatmap) ? metrics.leaveHeatmap : [],
+            maxJoin: Number(metrics.heatmapMaxJoin) || 0,
+            maxLeave: Number(metrics.heatmapMaxLeave) || 0
+        };
 
         updateTopMetrics(current);
         drawAllCharts();
@@ -196,6 +220,179 @@
             color: '#f6c85f',
             fill: 'rgba(246, 200, 95, 0.18)'
         });
+        drawHeatmap('joinHeatmapChart', latestHeatmaps.join, latestHeatmaps.maxJoin, '#58d68d');
+        drawHeatmap('leaveHeatmapChart', latestHeatmaps.leave, latestHeatmaps.maxLeave, '#ff8a8a');
+    }
+
+    function drawHeatmap(canvasId, cells, maxCount, accentColor) {
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+
+        canvas.width = Math.max(1, Math.floor(width * dpr));
+        canvas.height = Math.max(1, Math.floor(height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const chartBackground = themeColor('--chart-bg', '#0b1427');
+        const chartLabel = themeColor('--chart-label', '#8ea6d2');
+        const chartGrid = themeColor('--chart-grid', 'rgba(120, 150, 210, 0.22)');
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = chartBackground;
+        ctx.fillRect(0, 0, width, height);
+
+        const padding = { left: 48, right: 10, top: 10, bottom: 22 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+        if (chartWidth <= 0 || chartHeight <= 0) {
+            return;
+        }
+
+        const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const cellWidth = chartWidth / 24;
+        const cellHeight = chartHeight / 7;
+        const maxValue = Math.max(1, Number(maxCount) || 0);
+
+        const byKey = new Map();
+        for (const cell of Array.isArray(cells) ? cells : []) {
+            const day = Number(cell.day);
+            const hour = Number(cell.hour);
+            const count = Number(cell.count);
+            if (!Number.isFinite(day) || !Number.isFinite(hour) || !Number.isFinite(count)) {
+                continue;
+            }
+            byKey.set(`${day}:${hour}`, Math.max(0, Math.floor(count)));
+        }
+
+        for (let day = 0; day < 7; day += 1) {
+            for (let hour = 0; hour < 24; hour += 1) {
+                const count = byKey.get(`${day}:${hour}`) || 0;
+                const normalized = count <= 0 ? 0 : Math.pow(Math.min(1, count / maxValue), 0.6);
+                const alpha = count <= 0 ? 0.03 : Math.min(1, 0.1 + normalized * 0.9);
+                const x = padding.left + hour * cellWidth;
+                const y = padding.top + day * cellHeight;
+
+                ctx.fillStyle = toRgba(accentColor, alpha);
+                ctx.fillRect(x + 1, y + 1, Math.max(1, cellWidth - 2), Math.max(1, cellHeight - 2));
+            }
+        }
+
+        ctx.strokeStyle = chartGrid;
+        ctx.lineWidth = 1;
+        for (let day = 0; day <= 7; day += 1) {
+            const y = padding.top + day * cellHeight;
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(padding.left + chartWidth, y);
+            ctx.stroke();
+        }
+        for (let hour = 0; hour <= 24; hour += 1) {
+            const x = padding.left + hour * cellWidth;
+            ctx.beginPath();
+            ctx.moveTo(x, padding.top);
+            ctx.lineTo(x, padding.top + chartHeight);
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = chartLabel;
+        ctx.font = '11px Segoe UI';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'right';
+        for (let day = 0; day < 7; day += 1) {
+            const y = padding.top + (day + 0.5) * cellHeight;
+            ctx.fillText(dayLabels[day], padding.left - 6, y);
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let hour = 0; hour < 24; hour += 6) {
+            const x = padding.left + (hour + 0.5) * cellWidth;
+            ctx.fillText(`${hour}:00`, x, padding.top + chartHeight + 4);
+        }
+
+        heatmapRenderMeta[canvasId] = {
+            padding,
+            chartWidth,
+            chartHeight,
+            cellWidth,
+            cellHeight,
+            byKey,
+            dayLabels
+        };
+    }
+
+    function createHeatmapTooltip() {
+        const tooltip = document.createElement('div');
+        tooltip.style.position = 'fixed';
+        tooltip.style.zIndex = '1000';
+        tooltip.style.padding = '6px 8px';
+        tooltip.style.border = '1px solid var(--chart-border, #213457)';
+        tooltip.style.background = 'var(--surface, #111a2e)';
+        tooltip.style.color = 'var(--text, #e5ebf8)';
+        tooltip.style.borderRadius = '6px';
+        tooltip.style.font = '12px Segoe UI, sans-serif';
+        tooltip.style.pointerEvents = 'none';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+        return tooltip;
+    }
+
+    function setupHeatmapHover(canvasId, mode) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || canvas.dataset.hoverBound === '1') {
+            return;
+        }
+
+        canvas.dataset.hoverBound = '1';
+
+        canvas.addEventListener('mousemove', event => {
+            const meta = heatmapRenderMeta[canvasId];
+            if (!meta) {
+                heatmapTooltip.style.display = 'none';
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            const insideX = x >= meta.padding.left && x <= (meta.padding.left + meta.chartWidth);
+            const insideY = y >= meta.padding.top && y <= (meta.padding.top + meta.chartHeight);
+            if (!insideX || !insideY) {
+                heatmapTooltip.style.display = 'none';
+                return;
+            }
+
+            const hour = Math.max(0, Math.min(23, Math.floor((x - meta.padding.left) / meta.cellWidth)));
+            const day = Math.max(0, Math.min(6, Math.floor((y - meta.padding.top) / meta.cellHeight)));
+            const count = meta.byKey.get(`${day}:${hour}`) || 0;
+            const verb = mode === 'join' ? 'joined' : 'left';
+            const dayLabel = meta.dayLabels[day] || 'Unknown';
+
+            heatmapTooltip.textContent = `${dayLabel} ${hour}:00-${hour + 1}:00: ${count} ${verb}`;
+            heatmapTooltip.style.left = `${event.clientX + 12}px`;
+            heatmapTooltip.style.top = `${event.clientY + 12}px`;
+            heatmapTooltip.style.display = 'block';
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            heatmapTooltip.style.display = 'none';
+        });
+    }
+
+    function toRgba(hex, alpha) {
+        const normalized = (hex || '').trim();
+        const parsed = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(normalized);
+        if (!parsed) {
+            return `rgba(88, 140, 255, ${alpha})`;
+        }
+
+        const r = parseInt(parsed[1], 16);
+        const g = parseInt(parsed[2], 16);
+        const b = parseInt(parsed[3], 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     function drawSeriesChart(canvasId, points, options) {
@@ -307,6 +504,8 @@
     (async () => {
         try {
             initSidebarCategories();
+            setupHeatmapHover('joinHeatmapChart', 'join');
+            setupHeatmapHover('leaveHeatmapChart', 'leave');
             await Promise.all([loadMe(), loadOverview()]);
             setInterval(() => {
                 loadOverview().catch(() => {});

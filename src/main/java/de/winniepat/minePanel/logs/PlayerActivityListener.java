@@ -19,13 +19,20 @@ public final class PlayerActivityListener implements Listener {
     private final MinePanel plugin;
     private final KnownPlayerRepository knownPlayerRepository;
     private final PlayerActivityRepository playerActivityRepository;
+    private final JoinLeaveEventRepository joinLeaveEventRepository;
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Gson gson = new Gson();
 
-    public PlayerActivityListener(MinePanel plugin, KnownPlayerRepository knownPlayerRepository, PlayerActivityRepository playerActivityRepository) {
+    public PlayerActivityListener(
+            MinePanel plugin,
+            KnownPlayerRepository knownPlayerRepository,
+            PlayerActivityRepository playerActivityRepository,
+            JoinLeaveEventRepository joinLeaveEventRepository
+    ) {
         this.plugin = plugin;
         this.knownPlayerRepository = knownPlayerRepository;
         this.playerActivityRepository = playerActivityRepository;
+        this.joinLeaveEventRepository = joinLeaveEventRepository;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -35,6 +42,7 @@ public final class PlayerActivityListener implements Listener {
         long now = Instant.now().toEpochMilli();
 
         knownPlayerRepository.upsert(uuid, player.getName(), now);
+        joinLeaveEventRepository.appendJoinEvent(uuid, player.getName(), now);
 
         String ip = "";
         if (player.getAddress() != null && player.getAddress().getAddress() != null) {
@@ -57,6 +65,7 @@ public final class PlayerActivityListener implements Listener {
         long now = Instant.now().toEpochMilli();
         knownPlayerRepository.upsert(player.getUniqueId(), player.getName(), now);
         playerActivityRepository.onQuit(player.getUniqueId(), now);
+        joinLeaveEventRepository.appendLeaveEvent(player.getUniqueId(), player.getName(), now);
     }
 
     private String resolveCountry(String ipAddress) {

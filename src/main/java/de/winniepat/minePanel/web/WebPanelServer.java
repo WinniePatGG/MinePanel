@@ -21,6 +21,7 @@ import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -55,6 +56,7 @@ public final class WebPanelServer {
     private final LogRepository logRepository;
     private final KnownPlayerRepository knownPlayerRepository;
     private final PlayerActivityRepository playerActivityRepository;
+    private final JoinLeaveEventRepository joinLeaveEventRepository;
     private final DiscordWebhookService discordWebhookService;
     private final PanelLogger panelLogger;
     private final ServerLogService serverLogService;
@@ -78,6 +80,7 @@ public final class WebPanelServer {
             PanelLogger panelLogger,
             ServerLogService serverLogService,
             BootstrapService bootstrapService,
+            JoinLeaveEventRepository joinLeaveEventRepository,
             ExtensionManager extensionManager
     ) {
         this.plugin = plugin;
@@ -88,6 +91,7 @@ public final class WebPanelServer {
         this.logRepository = logRepository;
         this.knownPlayerRepository = knownPlayerRepository;
         this.playerActivityRepository = playerActivityRepository;
+        this.joinLeaveEventRepository = joinLeaveEventRepository;
         this.discordWebhookService = discordWebhookService;
         this.panelLogger = panelLogger;
         this.serverLogService = serverLogService;
@@ -354,11 +358,59 @@ public final class WebPanelServer {
         history.put("memory", memoryHistory);
         history.put("cpu", cpuHistory);
 
+        long heatmapWindowDays = 14L;
+        long since = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(heatmapWindowDays);
+        JoinLeaveHeatmap heatmap = buildJoinLeaveHeatmaps(joinLeaveEventRepository.listEventsSince(since));
+
         return json(response, 200, Map.of(
                 "current", current,
                 "history", history,
-                "windowMinutes", 60
+                "windowMinutes", 60,
+                "joinHeatmap", heatmap.joinCells(),
+                "leaveHeatmap", heatmap.leaveCells(),
+                "heatmapMaxJoin", heatmap.maxJoin(),
+                "heatmapMaxLeave", heatmap.maxLeave(),
+                "heatmapWindowDays", heatmapWindowDays
         ));
+    }
+
+    private JoinLeaveHeatmap buildJoinLeaveHeatmaps(List<JoinLeaveEventRepository.JoinLeaveEvent> events) {
+        int[][] joins = new int[7][24];
+        int[][] leaves = new int[7][24];
+
+        for (JoinLeaveEventRepository.JoinLeaveEvent event : events) {
+            var dateTime = Instant.ofEpochMilli(event.createdAt()).atZone(ZoneId.systemDefault());
+            int day = dateTime.getDayOfWeek().getValue() - 1;
+            int hour = dateTime.getHour();
+            if (day < 0 || day > 6 || hour < 0 || hour > 23) {
+                continue;
+            }
+
+            if ("JOIN".equalsIgnoreCase(event.eventType())) {
+                joins[day][hour] += 1;
+            } else if ("LEAVE".equalsIgnoreCase(event.eventType())) {
+                leaves[day][hour] += 1;
+            }
+        }
+
+        List<Map<String, Object>> joinCells = new ArrayList<>();
+        List<Map<String, Object>> leaveCells = new ArrayList<>();
+        int maxJoin = 0;
+        int maxLeave = 0;
+
+        for (int day = 0; day < 7; day++) {
+            for (int hour = 0; hour < 24; hour++) {
+                int joinCount = joins[day][hour];
+                int leaveCount = leaves[day][hour];
+                maxJoin = Math.max(maxJoin, joinCount);
+                maxLeave = Math.max(maxLeave, leaveCount);
+
+                joinCells.add(Map.of("day", day, "hour", hour, "count", joinCount));
+                leaveCells.add(Map.of("day", day, "hour", hour, "count", leaveCount));
+            }
+        }
+
+        return new JoinLeaveHeatmap(joinCells, leaveCells, maxJoin, maxLeave);
     }
 
     private String handleBootstrap(Request request, Response response) {
@@ -1830,6 +1882,14 @@ public final class WebPanelServer {
     }
 
     private record MetricSample(long timestampMillis, double tps, double memoryPercent, double memoryUsedMb, double cpuPercent) {
+    }
+
+    private record JoinLeaveHeatmap(
+            List<Map<String, Object>> joinCells,
+            List<Map<String, Object>> leaveCells,
+            int maxJoin,
+            int maxLeave
+    ) {
     }
 }
 

@@ -29,6 +29,7 @@ public final class MinePanel extends JavaPlugin {
     private LogRepository logRepository;
     private PanelLogger panelLogger;
     private PlayerActivityRepository playerActivityRepository;
+    private JoinLeaveEventRepository joinLeaveEventRepository;
     private ExtensionManager extensionManager;
     private ExtensionCommandRegistry extensionCommandRegistry;
 
@@ -39,6 +40,7 @@ public final class MinePanel extends JavaPlugin {
             PasswordHasher passwordHasher,
             ServerLogService serverLogService,
             BootstrapService bootstrapService,
+            JoinLeaveEventRepository joinLeaveEventRepository,
             ExtensionManager extensionManager
     ) {}
 
@@ -67,6 +69,7 @@ public final class MinePanel extends JavaPlugin {
         this.logRepository = new LogRepository(database);
         KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
         this.playerActivityRepository = new PlayerActivityRepository(database);
+        this.joinLeaveEventRepository = new JoinLeaveEventRepository(database);
 
         DiscordWebhookRepository discordWebhookRepository = new DiscordWebhookRepository(database);
         this.discordWebhookService = new DiscordWebhookService(getLogger(), discordWebhookRepository);
@@ -87,6 +90,7 @@ public final class MinePanel extends JavaPlugin {
                 passwordHasher,
                 serverLogService,
                 bootstrapService,
+                joinLeaveEventRepository,
                 extensionManager
         );
     }
@@ -121,7 +125,7 @@ public final class MinePanel extends JavaPlugin {
     private void registerPluginListeners(KnownPlayerRepository knownPlayerRepository) {
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
-        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository), this);
+        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository, joinLeaveEventRepository), this);
     }
 
     private void synchronizeKnownPlayers(KnownPlayerRepository knownPlayerRepository) {
@@ -163,6 +167,7 @@ public final class MinePanel extends JavaPlugin {
                 panelLogger,
                 startupContext.serverLogService(),
                 startupContext.bootstrapService(),
+                startupContext.joinLeaveEventRepository(),
                 startupContext.extensionManager()
         );
         this.webPanelServer.start();

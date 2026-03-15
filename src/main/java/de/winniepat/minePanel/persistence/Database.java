@@ -61,6 +61,14 @@ public final class Database {
                     + "last_country TEXT NOT NULL DEFAULT ''"
                     + ")");
 
+            statement.execute("CREATE TABLE IF NOT EXISTS join_leave_events ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "event_type TEXT NOT NULL,"
+                    + "player_uuid TEXT NOT NULL,"
+                    + "player_name TEXT NOT NULL,"
+                    + "created_at INTEGER NOT NULL"
+                    + ")");
+
             statement.execute("CREATE TABLE IF NOT EXISTS discord_webhook_config ("
                     + "id INTEGER PRIMARY KEY,"
                     + "enabled INTEGER NOT NULL,"

@@ -77,6 +77,17 @@ public final class SessionService {
         }
     }
 
+    public void deleteSessionsByUserId(long userId) {
+        String sql = "DELETE FROM sessions WHERE user_id = ?";
+        try (Connection connection = database.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, userId);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not delete sessions for user", exception);
+        }
+    }
+
     public void cleanupExpiredSessions() {
         String sql = "DELETE FROM sessions WHERE expires_at <= ?";
         try (Connection connection = database.getConnection();

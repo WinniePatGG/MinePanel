@@ -48,7 +48,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Action</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Save Role</th><th>Delete</th></tr></thead>
                     <tbody id="users"></tbody>
                 </table>
             </div>
@@ -111,11 +111,13 @@
         tbody.innerHTML = '';
         data.users.forEach(user => {
             const tr = document.createElement('tr');
+            const ownerLocked = user.role === 'OWNER';
             tr.innerHTML = `<td>${user.id}</td><td>${user.username}</td><td>
                 <select data-id="${user.id}">
                     ${['VIEWER','ADMIN','OWNER'].map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}
                 </select>
-            </td><td><button data-save="${user.id}">Save</button></td>`;
+            </td><td><button data-save="${user.id}">Save</button></td>
+            <td><button data-delete="${user.id}" ${ownerLocked ? 'disabled title="Owner users cannot be deleted"' : ''}>Delete</button></td>`;
             tbody.appendChild(tr);
         });
 
@@ -127,6 +129,22 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ role })
+                });
+                await loadUsers();
+            });
+        });
+
+        tbody.querySelectorAll('button[data-delete]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const id = button.getAttribute('data-delete');
+                const row = button.closest('tr');
+                const username = row ? row.children[1].textContent : `ID ${id}`;
+                if (!confirm(`Delete panel user '${username}'?`)) {
+                    return;
+                }
+
+                await api(`/api/users/${id}/delete`, {
+                    method: 'POST'
                 });
                 await loadUsers();
             });

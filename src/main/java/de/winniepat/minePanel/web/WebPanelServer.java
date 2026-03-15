@@ -229,6 +229,7 @@ public final class WebPanelServer {
             get("/users", (request, response) -> handleListUsers(request, response));
             post("/users", (request, response) -> handleCreateUser(request, response));
             post("/users/:id/role", (request, response) -> handleUpdateRole(request, response));
+            post("/users/:id/delete", (request, response) -> handleDeleteUser(request, response));
             get("/logs", (request, response) -> handleLogs(request, response));
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
             get("/players", (request, response) -> handlePlayers(request, response));
@@ -550,6 +551,40 @@ public final class WebPanelServer {
         }
 
         panelLogger.log("AUDIT", actingUser.username(), "Changed role for " + targetUser.get().username() + " to " + role.name());
+        return json(response, 200, Map.of("ok", true));
+    }
+
+    private String handleDeleteUser(Request request, Response response) {
+        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_USERS);
+
+        String rawId = request.params("id");
+        long userId;
+        try {
+            userId = Long.parseLong(rawId);
+        } catch (NumberFormatException exception) {
+            return json(response, 400, Map.of("error", "invalid_user_id"));
+        }
+
+        Optional<PanelUser> targetUser = userRepository.findById(userId);
+        if (targetUser.isEmpty()) {
+            return json(response, 404, Map.of("error", "user_not_found"));
+        }
+
+        PanelUser target = targetUser.get();
+        if (target.role() == UserRole.OWNER) {
+            return json(response, 403, Map.of("error", "owner_deletion_blocked"));
+        }
+
+        if (target.id() == actingUser.id()) {
+            return json(response, 403, Map.of("error", "self_deletion_blocked"));
+        }
+
+        if (!userRepository.deleteUser(target.id())) {
+            return json(response, 500, Map.of("error", "user_delete_failed"));
+        }
+
+        sessionService.deleteSessionsByUserId(target.id());
+        panelLogger.log("AUDIT", actingUser.username(), "Deleted panel user " + target.username() + " (id=" + target.id() + ")");
         return json(response, 200, Map.of("ok", true));
     }
 

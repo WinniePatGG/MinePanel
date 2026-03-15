@@ -107,6 +107,17 @@ public final class UserRepository {
         }
     }
 
+    public boolean deleteUser(long userId) {
+        String sql = "DELETE FROM users WHERE id = ?";
+        try (Connection connection = database.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, userId);
+            return statement.executeUpdate() > 0;
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not delete user", exception);
+        }
+    }
+
     private PanelUser mapUser(ResultSet resultSet) throws SQLException {
         return new PanelUser(
                 resultSet.getLong("id"),

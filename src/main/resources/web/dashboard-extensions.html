@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Extensions</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link active" href="/dashboard/extensions">Extensions</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Extensions</h1>
+        <p>Shows loaded extensions and jar artifacts available in the MinePanel extensions directory.</p>
+
+        <div class="toolbar">
+            <button id="refresh" class="secondary">Refresh</button>
+        </div>
+
+        <section class="card">
+            <h2>Installed Extensions (<span id="installedCount">0</span>)</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Source</th>
+                </tr>
+                </thead>
+                <tbody id="installedBody"></tbody>
+            </table>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Available Extension Jars (<span id="availableCount">0</span>)</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody id="availableBody"></tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const nextExpanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', nextExpanded);
+                toggle.classList.toggle('expanded', nextExpanded);
+                savedState[category] = nextExpanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || 'Request failed');
+        }
+        return payload;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function renderInstalled(installed) {
+        const body = document.getElementById('installedBody');
+        body.innerHTML = '';
+
+        if (!Array.isArray(installed) || installed.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="3">No extensions loaded</td>';
+            body.appendChild(row);
+            return;
+        }
+
+        for (const extension of installed) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${extension.id}</td><td>${extension.displayName}</td><td>${extension.source}</td>`;
+            body.appendChild(row);
+        }
+    }
+
+    function renderAvailable(available) {
+        const body = document.getElementById('availableBody');
+        body.innerHTML = '';
+
+        if (!Array.isArray(available) || available.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="2">No extension jars found in extensions directory</td>';
+            body.appendChild(row);
+            return;
+        }
+
+        for (const artifact of available) {
+            const row = document.createElement('tr');
+            const status = artifact.loaded ? 'Loaded' : 'Found (not loaded)';
+            row.innerHTML = `<td>${artifact.fileName}</td><td>${status}</td>`;
+            body.appendChild(row);
+        }
+    }
+
+    async function loadExtensionStatus() {
+        const status = await api('/api/extensions/status');
+        document.getElementById('installedCount').textContent = String(status.installedCount || 0);
+        document.getElementById('availableCount').textContent = String(status.availableCount || 0);
+        renderInstalled(status.installed);
+        renderAvailable(status.available);
+    }
+
+    document.getElementById('refresh').addEventListener('click', async () => {
+        await loadExtensionStatus();
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadExtensionStatus();
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

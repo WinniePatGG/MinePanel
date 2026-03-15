@@ -17,6 +17,8 @@ public final class ExtensionManager {
     private final List<MinePanelExtension> loadedExtensions = new ArrayList<>();
     private final List<URLClassLoader> classLoaders = new ArrayList<>();
     private final Set<String> loadedIds = new HashSet<>();
+    private final Map<String, String> extensionSourceById = new HashMap<>();
+    private Path extensionsDirectory;
 
     public ExtensionManager(MinePanel plugin, ExtensionContext context) {
         this.plugin = plugin;
@@ -28,6 +30,7 @@ public final class ExtensionManager {
     }
 
     public void loadFromDirectory(Path extensionsDirectory) {
+        this.extensionsDirectory = extensionsDirectory;
         try {
             Files.createDirectories(extensionsDirectory);
         } catch (IOException exception) {
@@ -43,6 +46,41 @@ public final class ExtensionManager {
         } catch (IOException exception) {
             plugin.getLogger().warning("Could not scan extensions directory: " + exception.getMessage());
         }
+    }
+
+    public synchronized List<Map<String, Object>> installedExtensions() {
+        List<Map<String, Object>> installed = new ArrayList<>();
+        for (MinePanelExtension extension : loadedExtensions) {
+            String id = extension.id() == null ? "" : extension.id();
+            String source = extensionSourceById.getOrDefault(id.toLowerCase(Locale.ROOT), "unknown");
+            installed.add(Map.of(
+                    "id", id,
+                    "displayName", extension.displayName() == null ? id : extension.displayName(),
+                    "source", source
+            ));
+        }
+
+        installed.sort(Comparator.comparing(item -> String.valueOf(item.get("id")), String.CASE_INSENSITIVE_ORDER));
+        return installed;
+    }
+
+    public synchronized List<Map<String, Object>> availableArtifacts() {
+        List<String> artifacts = scanArtifactFileNames();
+        Set<String> loadedArtifacts = new HashSet<>();
+        for (String source : extensionSourceById.values()) {
+            if (source != null && source.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+                loadedArtifacts.add(source);
+            }
+        }
+
+        List<Map<String, Object>> available = new ArrayList<>();
+        for (String artifact : artifacts) {
+            available.add(Map.of(
+                    "fileName", artifact,
+                    "loaded", loadedArtifacts.contains(artifact)
+            ));
+        }
+        return available;
     }
 
     public void enableAll() {
@@ -140,10 +178,28 @@ public final class ExtensionManager {
         try {
             extension.onLoad(context);
             loadedExtensions.add(extension);
+            extensionSourceById.put(id, source);
             plugin.getLogger().info("Loaded extension " + extension.id() + " from " + source);
         } catch (Exception exception) {
             loadedIds.remove(id);
             plugin.getLogger().warning("Could not initialize extension " + extension.id() + ": " + exception.getMessage());
+        }
+    }
+
+    private List<String> scanArtifactFileNames() {
+        if (extensionsDirectory == null) {
+            return List.of();
+        }
+
+        try (Stream<Path> files = Files.list(extensionsDirectory)) {
+            return files
+                    .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar"))
+                    .map(path -> path.getFileName().toString())
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .toList();
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not read extension artifacts: " + exception.getMessage());
+            return List.of();
         }
     }
 }

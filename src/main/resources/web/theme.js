@@ -43,6 +43,8 @@
             return;
         }
 
+        ensurePanelExtensionsLink(sideNav);
+
         try {
             const response = await fetch('/api/extensions/navigation', { credentials: 'same-origin' });
             if (!response.ok) {
@@ -115,6 +117,30 @@
         });
 
         return container;
+    }
+
+    function ensurePanelExtensionsLink(sideNav) {
+        const panelContainer = ensureCategoryContainer(sideNav, 'panel');
+        if (!panelContainer) {
+            return;
+        }
+
+        const existing = panelContainer.querySelector('a.side-link[href="/dashboard/extensions"]');
+        if (existing) {
+            if (window.location.pathname === '/dashboard/extensions') {
+                existing.classList.add('active');
+            }
+            return;
+        }
+
+        const link = document.createElement('a');
+        link.className = 'side-link';
+        if (window.location.pathname === '/dashboard/extensions') {
+            link.classList.add('active');
+        }
+        link.href = '/dashboard/extensions';
+        link.textContent = 'Extensions';
+        panelContainer.appendChild(link);
     }
 
     function bootstrapExtensionNavigationTabs() {

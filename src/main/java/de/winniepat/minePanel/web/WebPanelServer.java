@@ -187,6 +187,11 @@ public final class WebPanelServer {
             return ResourceLoader.loadUtf8Text("/web/dashboard-themes.html");
         });
 
+        get("/dashboard/extensions", (request, response) -> {
+            response.type("text/html");
+            return ResourceLoader.loadUtf8Text("/web/dashboard-extensions.html");
+        });
+
         get("/dashboard/reports", (request, response) -> {
             response.type("text/html");
             return ResourceLoader.loadUtf8Text("/web/dashboard-reports.html");
@@ -213,6 +218,7 @@ public final class WebPanelServer {
             post("/logout", (request, response) -> handleLogout(request, response));
             get("/me", (request, response) -> handleMe(request, response));
             get("/extensions/navigation", (request, response) -> handleExtensionNavigation(request, response));
+            get("/extensions/status", (request, response) -> handleExtensionStatus(request, response));
             get("/users", (request, response) -> handleListUsers(request, response));
             post("/users", (request, response) -> handleCreateUser(request, response));
             post("/users/:id/role", (request, response) -> handleUpdateRole(request, response));
@@ -1720,6 +1726,20 @@ public final class WebPanelServer {
                 .toList();
 
         return json(response, 200, Map.of("tabs", tabs));
+    }
+
+    private String handleExtensionStatus(Request request, Response response) {
+        requireUser(request, PanelPermission.MANAGE_USERS);
+
+        List<Map<String, Object>> installed = extensionManager.installedExtensions();
+        List<Map<String, Object>> available = extensionManager.availableArtifacts();
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("installed", installed);
+        payload.put("available", available);
+        payload.put("installedCount", installed.size());
+        payload.put("availableCount", available.size());
+        return json(response, 200, payload);
     }
 
     private final class ExtensionSparkRegistry implements ExtensionWebRegistry {

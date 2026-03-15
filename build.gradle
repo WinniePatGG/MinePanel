@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'de.winniepat'
-version = 'alpha-3'
+version = 'alpha-4'
 
 base {
     archivesName = 'MinePanel'
@@ -29,7 +29,6 @@ dependencies {
 
 tasks.named('shadowJar') {
     archiveClassifier.set('')
-    // Core jar stays extension-agnostic; concrete extensions are shipped as separate jars.
     exclude('de/winniepat/minePanel/extensions/reports/**')
     exclude('de/winniepat/minePanel/extensions/playermanagement/**')
 }

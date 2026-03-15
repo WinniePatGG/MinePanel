@@ -47,7 +47,14 @@ web:
 
 security:
   bootstrapTokenLength: 32
+
+integrations:
+  github:
+    token: ""
+    releaseCacheSeconds: 300
 ```
+
+Use `integrations.github.token` (or environment variable `MINEPANEL_GITHUB_TOKEN`) for authenticated GitHub API requests and higher rate limits.
 
 ## Build
 
@@ -92,9 +99,9 @@ security:
 
 ## Extension Links
 
-- Modrinth author page: `https://modrinth.com/user/WinniePatGG`
-- Browse MinePanel-related plugins on Modrinth: `https://modrinth.com/plugins?query=minepanel`
-- Tip: The panel catalog already filters available extensions to projects by `WinniePatGG`.
+- GitHub releases: `https://github.com/WinniePatGG/MinePanel/releases`
+- The panel reads extension assets from the latest selected channel (Release or Pre-release).
+- If the GitHub API rate limit is reached, MinePanel falls back to cached release data and shows a warning in the Extensions tab.
 
 ## Included Extension Artifacts in This Repo
 
@@ -111,7 +118,7 @@ This repository can build two extension jars:
 
 Detailed step-by-step guide:
 
-- `docs/CUSTOM-EXTENSIONS.md`
+- `docs/EXTENSIONS.md`
 
 Implement `de.winniepat.minePanel.extensions.MinePanelExtension`.
 

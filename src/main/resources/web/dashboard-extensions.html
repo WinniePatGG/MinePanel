@@ -64,6 +64,16 @@
             background: rgba(127, 140, 170, 0.18);
             border-color: rgba(127, 140, 170, 0.5);
         }
+
+        .ext-warning {
+            margin: 10px 0 0;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(241, 196, 15, 0.45);
+            background: rgba(241, 196, 15, 0.14);
+            color: #ffe08b;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -95,6 +105,7 @@
     <main class="content-area">
         <h1>Extensions</h1>
         <p>Shows loaded extensions and extension downloads from the latest GitHub release/pre-release.</p>
+        <div id="extensionsWarning" class="ext-warning" style="display:none;"></div>
 
         <div class="toolbar">
             <select id="releaseChannel" style="width:auto;min-width:180px;">
@@ -253,6 +264,16 @@
         if (status.channel) {
             document.getElementById('releaseChannel').value = status.channel;
         }
+
+        const warning = document.getElementById('extensionsWarning');
+        if (status.availableExtensionsWarning) {
+            warning.textContent = status.availableExtensionsWarning;
+            warning.style.display = 'block';
+        } else {
+            warning.textContent = '';
+            warning.style.display = 'none';
+        }
+
         document.getElementById('installedCount').textContent = String(status.installedCount || 0);
         document.getElementById('availableExtensionCount').textContent = String(status.availableExtensionCount || 0);
         renderInstalled(status.installed);

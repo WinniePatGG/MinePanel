@@ -6,4 +6,7 @@ web:
 security:
   bootstrapTokenLength: 32
 
-
+integrations:
+  github:
+    token: ""
+    releaseCacheSeconds: 300

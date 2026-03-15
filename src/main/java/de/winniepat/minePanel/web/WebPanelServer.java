@@ -65,6 +65,9 @@ public final class WebPanelServer {
     private final Gson gson = new Gson();
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Deque<MetricSample> overviewSamples = new ArrayDeque<>();
+    private JsonArray cachedGitHubReleases = new JsonArray();
+    private long githubReleaseCacheExpiresAtMillis = 0L;
+    private String lastGitHubCatalogError = "";
     private BukkitTask overviewSamplerTask;
 
     public WebPanelServer(
@@ -1808,10 +1811,14 @@ public final class WebPanelServer {
             Map<String, Object> row = new HashMap<>(installedEntry);
             String source = String.valueOf(installedEntry.getOrDefault("source", ""));
             String extensionId = normalizeExtensionKey(String.valueOf(installedEntry.getOrDefault("id", "")));
+            String sourceExtensionId = normalizeExtensionKey(parseExtensionId(source));
             String installedVersionLabel = extractVersionLabel(source);
             VersionToken installedVersion = parseVersionToken(installedVersionLabel);
 
             ExtensionVersionInfo latest = latestByExtensionId.get(extensionId);
+            if (latest == null && !sourceExtensionId.isBlank()) {
+                latest = latestByExtensionId.get(sourceExtensionId);
+            }
             if (latest == null) {
                 row.put("status", "unknown");
                 row.put("outdated", false);
@@ -1846,6 +1853,9 @@ public final class WebPanelServer {
         payload.put("installedCount", installedWithStatus.size());
         payload.put("localArtifactCount", localArtifacts.size());
         payload.put("availableExtensionCount", availableExtensions.size());
+        if (!lastGitHubCatalogError.isBlank()) {
+            payload.put("availableExtensionsWarning", lastGitHubCatalogError);
+        }
         return json(response, 200, payload);
     }
 
@@ -1863,6 +1873,7 @@ public final class WebPanelServer {
 
     private List<Map<String, Object>> loadAvailableExtensionsFromGitHub(String channel) {
         try {
+            lastGitHubCatalogError = "";
             JsonArray releases = requestGitHubReleases();
             JsonObject release = selectLatestReleaseByChannel(releases, channel);
             if (release == null) {
@@ -1917,31 +1928,80 @@ public final class WebPanelServer {
             rows.sort(Comparator.comparing(row -> String.valueOf(row.getOrDefault("name", "")), String.CASE_INSENSITIVE_ORDER));
             return rows;
         } catch (Exception exception) {
-            plugin.getLogger().warning("Could not load extension catalog from GitHub: " + exception.getMessage());
+            String message = exception.getMessage() == null ? "unknown_error" : exception.getMessage();
+            lastGitHubCatalogError = "GitHub catalog unavailable: " + message;
+            plugin.getLogger().warning("Could not load extension catalog from GitHub: " + message);
             return List.of();
         }
     }
 
     private JsonArray requestGitHubReleases() {
+        long now = System.currentTimeMillis();
+        if (now < githubReleaseCacheExpiresAtMillis && cachedGitHubReleases != null && !cachedGitHubReleases.isEmpty()) {
+            return cachedGitHubReleases;
+        }
+
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create("https://api.github.com/repos/WinniePatGG/MinePanel/releases?per_page=20"))
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create("https://api.github.com/repos/WinniePatGG/MinePanel/releases?per_page=20"))
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "MinePanel")
-                    .GET()
-                    .build();
+                    .header("X-GitHub-Api-Version", "2022-11-28");
+
+            String token = resolveGitHubToken();
+            if (!token.isBlank()) {
+                requestBuilder.header("Authorization", "Bearer " + token);
+            }
+
+            HttpRequest request = requestBuilder.GET().build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() >= 300) {
-                throw new IllegalStateException("GitHub API status " + response.statusCode());
+                String errorMessage = "GitHub API status " + response.statusCode();
+                try {
+                    JsonObject body = gson.fromJson(response.body(), JsonObject.class);
+                    if (body != null && body.has("message") && !body.get("message").isJsonNull()) {
+                        errorMessage = body.get("message").getAsString();
+                    }
+                } catch (Exception ignored) {
+                    // Keep fallback status text.
+                }
+
+                if (response.statusCode() == 403 && cachedGitHubReleases != null && !cachedGitHubReleases.isEmpty()) {
+                    lastGitHubCatalogError = "GitHub rate limit hit, showing cached extension data";
+                    githubReleaseCacheExpiresAtMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5);
+                    return cachedGitHubReleases;
+                }
+
+                throw new IllegalStateException(errorMessage);
             }
 
             JsonElement parsed = gson.fromJson(response.body(), JsonElement.class);
             if (parsed == null || !parsed.isJsonArray()) {
-                return new JsonArray();
+                cachedGitHubReleases = new JsonArray();
+                githubReleaseCacheExpiresAtMillis = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(resolveGitHubCacheSeconds());
+                return cachedGitHubReleases;
             }
-            return parsed.getAsJsonArray();
+
+            cachedGitHubReleases = parsed.getAsJsonArray();
+            githubReleaseCacheExpiresAtMillis = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(resolveGitHubCacheSeconds());
+            return cachedGitHubReleases;
         } catch (Exception exception) {
             throw new IllegalStateException("Could not query GitHub releases", exception);
         }
+    }
+
+    private String resolveGitHubToken() {
+        String envToken = System.getenv("MINEPANEL_GITHUB_TOKEN");
+        if (envToken != null && !envToken.isBlank()) {
+            return envToken.trim();
+        }
+
+        String configToken = plugin.getConfig().getString("integrations.github.token", "");
+        return configToken == null ? "" : configToken.trim();
+    }
+
+    private int resolveGitHubCacheSeconds() {
+        int configured = plugin.getConfig().getInt("integrations.github.releaseCacheSeconds", 300);
+        return Math.max(30, Math.min(3600, configured));
     }
 
     private JsonObject selectLatestReleaseByChannel(JsonArray releases, String channel) {

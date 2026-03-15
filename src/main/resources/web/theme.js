@@ -153,7 +153,47 @@
         loadExtensionNavigationTabs();
     }
 
+    function startLiveAssetRefresh() {
+        let lastVersion = null;
+
+        async function checkVersion() {
+            try {
+                const response = await fetch('/api/web/live-version', {
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                });
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                const nextVersion = Number(payload.version || 0);
+                if (!Number.isFinite(nextVersion) || nextVersion <= 0) {
+                    return;
+                }
+
+                if (lastVersion === null) {
+                    lastVersion = nextVersion;
+                    return;
+                }
+
+                if (nextVersion > lastVersion) {
+                    window.location.reload();
+                    return;
+                }
+
+                lastVersion = nextVersion;
+            } catch (ignored) {
+                // Ignore transient connectivity issues and try again on next interval.
+            }
+        }
+
+        checkVersion();
+        window.setInterval(checkVersion, 2000);
+    }
+
     loadTheme();
     bootstrapExtensionNavigationTabs();
+    startLiveAssetRefresh();
 })();
 

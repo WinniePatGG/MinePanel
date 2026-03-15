@@ -32,6 +32,7 @@ public final class MinePanel extends JavaPlugin {
     private JoinLeaveEventRepository joinLeaveEventRepository;
     private ExtensionManager extensionManager;
     private ExtensionCommandRegistry extensionCommandRegistry;
+    private WebAssetService webAssetService;
 
     private record StartupContext(
             UserRepository userRepository,
@@ -41,7 +42,8 @@ public final class MinePanel extends JavaPlugin {
             ServerLogService serverLogService,
             BootstrapService bootstrapService,
             JoinLeaveEventRepository joinLeaveEventRepository,
-            ExtensionManager extensionManager
+            ExtensionManager extensionManager,
+            WebAssetService webAssetService
     ) {}
 
     @Override
@@ -80,6 +82,7 @@ public final class MinePanel extends JavaPlugin {
         PasswordHasher passwordHasher = new PasswordHasher();
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
+        this.webAssetService = initializeWebAssets();
 
         this.extensionManager = initializeExtensions(knownPlayerRepository);
 
@@ -91,8 +94,15 @@ public final class MinePanel extends JavaPlugin {
                 serverLogService,
                 bootstrapService,
                 joinLeaveEventRepository,
-                extensionManager
+                extensionManager,
+                webAssetService
         );
+    }
+
+    private WebAssetService initializeWebAssets() {
+        WebAssetService service = new WebAssetService(this, getDataFolder().toPath().resolve("web"));
+        service.ensureSeeded();
+        return service;
     }
 
     private ExtensionManager initializeExtensions(KnownPlayerRepository knownPlayerRepository) {
@@ -168,7 +178,8 @@ public final class MinePanel extends JavaPlugin {
                 startupContext.serverLogService(),
                 startupContext.bootstrapService(),
                 startupContext.joinLeaveEventRepository(),
-                startupContext.extensionManager()
+                startupContext.extensionManager(),
+                startupContext.webAssetService()
         );
         this.webPanelServer.start();
     }

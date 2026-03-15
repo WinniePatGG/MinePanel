@@ -62,6 +62,7 @@ public final class WebPanelServer {
     private final ServerLogService serverLogService;
     private final BootstrapService bootstrapService;
     private final ExtensionManager extensionManager;
+    private final WebAssetService webAssetService;
     private final Gson gson = new Gson();
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Deque<MetricSample> overviewSamples = new ArrayDeque<>();
@@ -84,7 +85,8 @@ public final class WebPanelServer {
             ServerLogService serverLogService,
             BootstrapService bootstrapService,
             JoinLeaveEventRepository joinLeaveEventRepository,
-            ExtensionManager extensionManager
+            ExtensionManager extensionManager,
+            WebAssetService webAssetService
     ) {
         this.plugin = plugin;
         this.config = config;
@@ -100,6 +102,7 @@ public final class WebPanelServer {
         this.serverLogService = serverLogService;
         this.bootstrapService = bootstrapService;
         this.extensionManager = extensionManager;
+        this.webAssetService = webAssetService;
     }
 
     public void start() {
@@ -123,95 +126,95 @@ public final class WebPanelServer {
         get("/", (request, response) -> {
             response.type("text/html");
             if (bootstrapService.needsBootstrap()) {
-                return ResourceLoader.loadUtf8Text("/web/setup.html");
+                return webAssetService.readText("setup.html");
             }
-            return ResourceLoader.loadUtf8Text("/web/login.html");
+            return webAssetService.readText("login.html");
         });
 
         get("/setup", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/setup.html");
+            return webAssetService.readText("setup.html");
         });
 
         get("/dashboard", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-overview.html");
+            return webAssetService.readText("dashboard-overview.html");
         });
 
         get("/console", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-console.html");
+            return webAssetService.readText("dashboard-console.html");
         });
 
         get("/dashboard/console", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-console.html");
+            return webAssetService.readText("dashboard-console.html");
         });
 
         get("/dashboard/users", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-users.html");
+            return webAssetService.readText("dashboard-users.html");
         });
 
         get("/dashboard/plugins", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-plugins.html");
+            return webAssetService.readText("dashboard-plugins.html");
         });
 
         get("/dashboard/overview", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-overview.html");
+            return webAssetService.readText("dashboard-overview.html");
         });
 
         get("/dashboard/bans", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-bans.html");
+            return webAssetService.readText("dashboard-bans.html");
         });
 
 
         get("/dashboard/resources", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-resources.html");
+            return webAssetService.readText("dashboard-resources.html");
         });
 
         get("/dashboard/health", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-resources.html");
+            return webAssetService.readText("dashboard-resources.html");
         });
 
         get("/dashboard/players", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-players.html");
+            return webAssetService.readText("dashboard-players.html");
         });
 
         get("/dashboard/discord-webhook", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-discord-webhook.html");
+            return webAssetService.readText("dashboard-discord-webhook.html");
         });
 
         get("/dashboard/themes", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-themes.html");
+            return webAssetService.readText("dashboard-themes.html");
         });
 
         get("/dashboard/extensions", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-extensions.html");
+            return webAssetService.readText("dashboard-extensions.html");
         });
 
         get("/dashboard/reports", (request, response) -> {
             response.type("text/html");
-            return ResourceLoader.loadUtf8Text("/web/dashboard-reports.html");
+            return webAssetService.readText("dashboard-reports.html");
         });
 
         get("/panel.css", (request, response) -> {
             response.type("text/css");
-            return ResourceLoader.loadUtf8Text("/web/panel.css");
+            return webAssetService.readText("panel.css");
         });
 
         get("/theme.js", (request, response) -> {
             response.type("application/javascript");
-            return ResourceLoader.loadUtf8Text("/web/theme.js");
+            return webAssetService.readText("theme.js");
         });
 
         get("/.well-known/appspecific/com.chrome.devtools.json", (request, response) -> {
@@ -226,6 +229,7 @@ public final class WebPanelServer {
             get("/me", (request, response) -> handleMe(request, response));
             get("/extensions/navigation", (request, response) -> handleExtensionNavigation(request, response));
             get("/extensions/status", (request, response) -> handleExtensionStatus(request, response));
+            get("/web/live-version", (request, response) -> handleWebLiveVersion(response));
             get("/users", (request, response) -> handleListUsers(request, response));
             post("/users", (request, response) -> handleCreateUser(request, response));
             post("/users/:id/role", (request, response) -> handleUpdateRole(request, response));
@@ -260,6 +264,11 @@ public final class WebPanelServer {
         stopOverviewSampler();
         spark.Spark.stop();
         awaitStop();
+    }
+
+    private String handleWebLiveVersion(Response response) {
+        response.type("application/json");
+        return gson.toJson(Map.of("version", webAssetService.currentVersion()));
     }
 
     private void startOverviewSampler() {

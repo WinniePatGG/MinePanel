@@ -230,14 +230,7 @@ public final class MinePanel extends JavaPlugin {
 
     private void exportPanelLogsToServerLogsDirectory() {
         try {
-            Path pluginDataFolder = getDataFolder().toPath();
-            Path pluginsFolder = pluginDataFolder.getParent();
-            Path serverRoot = pluginsFolder == null ? pluginDataFolder : pluginsFolder.getParent();
-            if (serverRoot == null) {
-                serverRoot = pluginDataFolder;
-            }
-
-            Path logsDirectory = serverRoot.resolve("logs");
+            Path logsDirectory = getDataFolder().toPath().resolve("logs");
             Files.createDirectories(logsDirectory);
 
             String timestamp = EXPORT_FILE_NAME_FORMAT.format(Instant.now().atZone(ZoneOffset.UTC));

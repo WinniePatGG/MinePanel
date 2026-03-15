@@ -34,7 +34,7 @@ The core plugin provides a secure web UI (login, roles, sessions, dashboard page
 - If extension jars are present, their routes/tabs/features are loaded after restart.
 - Extensions are discovered via Java `ServiceLoader` using:
   - `META-INF/services/de.winniepat.minePanel.extensions.MinePanelExtension`
-
+### All Extensions and their features are listed [here](https://github.com/WinniePatGG/MinePanel/tree/main/docs/AVAILABLE-EXTENSIONS.md)
 ## Runtime Configuration
 
 Default config in `src/main/resources/config.yml`:
@@ -111,7 +111,7 @@ This repository can build two extension jars:
 
 Detailed step-by-step guide:
 
-- `docs/EXTENSIONS.md`
+- `docs/CUSTOM-EXTENSIONS.md`
 
 Implement `de.winniepat.minePanel.extensions.MinePanelExtension`.
 

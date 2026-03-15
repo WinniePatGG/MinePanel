@@ -56,15 +56,17 @@
         </section>
 
         <section class="card spaced-top">
-            <h2>Available Extension Jars (<span id="availableCount">0</span>)</h2>
+            <h2>Available Extensions on Modrinth (<span id="availableExtensionCount">0</span>)</h2>
             <table>
                 <thead>
                 <tr>
-                    <th>File</th>
-                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Author</th>
+                    <th>Download</th>
                 </tr>
                 </thead>
-                <tbody id="availableBody"></tbody>
+                <tbody id="availableExtensionsBody"></tbody>
             </table>
         </section>
     </main>
@@ -139,21 +141,31 @@
         }
     }
 
-    function renderAvailable(available) {
-        const body = document.getElementById('availableBody');
+    function renderAvailableExtensions(availableExtensions) {
+        const body = document.getElementById('availableExtensionsBody');
         body.innerHTML = '';
 
-        if (!Array.isArray(available) || available.length === 0) {
+        if (!Array.isArray(availableExtensions) || availableExtensions.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="2">No extension jars found in extensions directory</td>';
+            row.innerHTML = '<td colspan="4">No MinePanel extensions found on Modrinth</td>';
             body.appendChild(row);
             return;
         }
 
-        for (const artifact of available) {
+        for (const extension of availableExtensions) {
+            const name = extension.name || extension.id || 'Unknown';
+            const description = extension.description || '-';
+            const author = extension.author || '-';
+            const projectUrl = extension.projectUrl || '#';
+            const downloadUrl = extension.downloadUrl || projectUrl;
+
             const row = document.createElement('tr');
-            const status = artifact.loaded ? 'Loaded' : 'Found (not loaded)';
-            row.innerHTML = `<td>${artifact.fileName}</td><td>${status}</td>`;
+            row.innerHTML = `
+                <td><a href="${projectUrl}" target="_blank" rel="noopener noreferrer">${name}</a></td>
+                <td>${description}</td>
+                <td>${author}</td>
+                <td><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Download</a></td>
+            `;
             body.appendChild(row);
         }
     }
@@ -161,9 +173,9 @@
     async function loadExtensionStatus() {
         const status = await api('/api/extensions/status');
         document.getElementById('installedCount').textContent = String(status.installedCount || 0);
-        document.getElementById('availableCount').textContent = String(status.availableCount || 0);
+        document.getElementById('availableExtensionCount').textContent = String(status.availableExtensionCount || 0);
         renderInstalled(status.installed);
-        renderAvailable(status.available);
+        renderAvailableExtensions(status.availableExtensions);
     }
 
     document.getElementById('refresh').addEventListener('click', async () => {

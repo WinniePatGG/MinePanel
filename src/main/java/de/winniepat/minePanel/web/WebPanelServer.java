@@ -1784,14 +1784,73 @@ public final class WebPanelServer {
         requireUser(request, PanelPermission.MANAGE_USERS);
 
         List<Map<String, Object>> installed = extensionManager.installedExtensions();
-        List<Map<String, Object>> available = extensionManager.availableArtifacts();
+        List<Map<String, Object>> localArtifacts = extensionManager.availableArtifacts();
+        List<Map<String, Object>> availableExtensions = loadAvailableExtensionsFromModrinth();
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("installed", installed);
-        payload.put("available", available);
+        payload.put("localArtifacts", localArtifacts);
+        payload.put("availableExtensions", availableExtensions);
         payload.put("installedCount", installed.size());
-        payload.put("availableCount", available.size());
+        payload.put("localArtifactCount", localArtifacts.size());
+        payload.put("availableExtensionCount", availableExtensions.size());
         return json(response, 200, payload);
+    }
+
+    private List<Map<String, Object>> loadAvailableExtensionsFromModrinth() {
+        try {
+            final String trustedAuthor = "winniepatgg";
+            String query = URLEncoder.encode("minepanel extension", StandardCharsets.UTF_8);
+            String facets = URLEncoder.encode("[[\"project_type:plugin\"]]", StandardCharsets.UTF_8);
+            JsonObject root = requestJson("https://api.modrinth.com/v2/search?query=" + query + "&limit=50&facets=" + facets);
+            JsonArray hits = root.getAsJsonArray("hits");
+            if (hits == null) {
+                return List.of();
+            }
+
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (JsonElement element : hits) {
+                if (element == null || !element.isJsonObject()) {
+                    continue;
+                }
+
+                JsonObject hit = element.getAsJsonObject();
+                String title = stringValue(hit, "title");
+                String description = stringValue(hit, "description");
+                String slug = stringValue(hit, "slug");
+                String projectId = stringValue(hit, "project_id");
+                String author = stringValue(hit, "author");
+                if (isBlank(slug) || isBlank(projectId)) {
+                    continue;
+                }
+
+                if (isBlank(author) || !author.trim().equalsIgnoreCase(trustedAuthor)) {
+                    continue;
+                }
+
+                String searchable = (title + " " + description).toLowerCase(Locale.ROOT);
+                if (!searchable.contains("minepanel")) {
+                    continue;
+                }
+
+                String projectUrl = "https://modrinth.com/plugin/" + slug;
+                rows.add(Map.of(
+                        "id", projectId,
+                        "name", firstNonBlank(title, slug),
+                        "description", description,
+                        "author", author,
+                        "iconUrl", stringValue(hit, "icon_url"),
+                        "projectUrl", projectUrl,
+                        "downloadUrl", projectUrl + "/versions"
+                ));
+            }
+
+            rows.sort(Comparator.comparing(row -> String.valueOf(row.getOrDefault("name", "")), String.CASE_INSENSITIVE_ORDER));
+            return rows;
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Could not load extension catalog from Modrinth: " + exception.getMessage());
+            return List.of();
+        }
     }
 
     private final class ExtensionSparkRegistry implements ExtensionWebRegistry {

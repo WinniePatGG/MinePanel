@@ -272,7 +272,6 @@
             const fileName = extension.id || '';
             const installState = extension.installState || 'not_installed';
             const prereleaseSuffix = extension.prerelease ? ' (pre-release)' : '';
-            const statusBadge = installStateBadge(installState);
             const actionMarkup = installState === 'restart_required'
                 ? '<span class="ext-status ext-status-restart">Restart required</span>'
                 : (installState === 'installed'
@@ -283,7 +282,7 @@
             row.innerHTML = `
                 <td><a class="ext-link" href="${projectUrl}" target="_blank" rel="noopener noreferrer">${name}</a></td>
                 <td>${description}</td>
-                <td>${release}${prereleaseSuffix} ${statusBadge}</td>
+                <td>${release}${prereleaseSuffix}</td>
                 <td>${actionMarkup}</td>
             `;
             body.appendChild(row);

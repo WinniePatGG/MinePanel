@@ -40,10 +40,12 @@ public final class ExtensionManager {
             return;
         }
 
+        cleanupDuplicateArtifactsOnStartup(extensionsDirectory);
+
         try (Stream<Path> files = Files.list(extensionsDirectory)) {
             files
                     .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar"))
-                    .sorted(Comparator.comparing(path -> path.getFileName().toString().toLowerCase(Locale.ROOT)))
+                    .sorted(this::compareJarsNewestFirst)
                     .forEach(path -> loadJarExtensions(path, null));
         } catch (IOException exception) {
             plugin.getLogger().warning("Could not scan extensions directory: " + exception.getMessage());
@@ -66,7 +68,7 @@ public final class ExtensionManager {
         try (Stream<Path> files = Files.list(extensionsDirectory)) {
             List<Path> jars = files
                     .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar"))
-                    .sorted(Comparator.comparing(path -> path.getFileName().toString().toLowerCase(Locale.ROOT)))
+                    .sorted(this::compareJarsNewestFirst)
                     .toList();
 
             for (Path jarFile : jars) {
@@ -288,6 +290,225 @@ public final class ExtensionManager {
         } catch (IOException exception) {
             plugin.getLogger().warning("Could not read extension artifacts: " + exception.getMessage());
             return List.of();
+        }
+    }
+
+    private int compareJarsNewestFirst(Path left, Path right) {
+        long leftModified = lastModifiedMillis(left);
+        long rightModified = lastModifiedMillis(right);
+        int byModified = Long.compare(rightModified, leftModified);
+        if (byModified != 0) {
+            return byModified;
+        }
+
+        String leftName = left.getFileName().toString().toLowerCase(Locale.ROOT);
+        String rightName = right.getFileName().toString().toLowerCase(Locale.ROOT);
+        return rightName.compareTo(leftName);
+    }
+
+    private long lastModifiedMillis(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException ignored) {
+            return 0L;
+        }
+    }
+
+    private void cleanupDuplicateArtifactsOnStartup(Path extensionDirectory) {
+        List<Path> jars;
+        try (Stream<Path> files = Files.list(extensionDirectory)) {
+            jars = files
+                    .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar"))
+                    .toList();
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not inspect extension artifacts for startup cleanup: " + exception.getMessage());
+            return;
+        }
+
+        if (jars.size() < 2) {
+            return;
+        }
+
+        Map<String, Path> keepByKey = new HashMap<>();
+        Map<String, ArtifactVersionToken> keepVersionByKey = new HashMap<>();
+
+        for (Path jar : jars) {
+            String fileName = jar.getFileName().toString();
+            String key = extensionKeyFromArtifact(fileName);
+            if (key.isBlank()) {
+                continue;
+            }
+
+            ArtifactVersionToken currentVersion = parseArtifactVersion(fileName);
+            Path keptPath = keepByKey.get(key);
+            ArtifactVersionToken keptVersion = keepVersionByKey.get(key);
+
+            if (keptPath == null || keptVersion == null) {
+                keepByKey.put(key, jar);
+                keepVersionByKey.put(key, currentVersion);
+                continue;
+            }
+
+            int compare = compareArtifactVersions(currentVersion, keptVersion);
+            if (compare > 0 || (compare == 0 && compareJarsNewestFirst(jar, keptPath) < 0)) {
+                keepByKey.put(key, jar);
+                keepVersionByKey.put(key, currentVersion);
+            }
+        }
+
+        for (Path jar : jars) {
+            String fileName = jar.getFileName().toString();
+            String key = extensionKeyFromArtifact(fileName);
+            if (key.isBlank()) {
+                continue;
+            }
+
+            Path kept = keepByKey.get(key);
+            if (kept == null || kept.equals(jar)) {
+                continue;
+            }
+
+            try {
+                Files.deleteIfExists(jar);
+                plugin.getLogger().info("Removed old extension artifact on startup: " + fileName + " (kept " + kept.getFileName() + ")");
+            } catch (IOException exception) {
+                plugin.getLogger().warning("Could not delete old extension artifact " + fileName + " on startup: " + exception.getMessage());
+            }
+        }
+    }
+
+    private String extensionKeyFromArtifact(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "";
+        }
+
+        String normalized = fileName.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.endsWith(".jar") || !normalized.startsWith("minepanel-extension-")) {
+            return "";
+        }
+
+        normalized = normalized.substring(0, normalized.length() - 4);
+        normalized = normalized.substring("minepanel-extension-".length());
+
+        int alphaSplit = normalized.lastIndexOf("-alpha-");
+        if (alphaSplit > 0) {
+            normalized = normalized.substring(0, alphaSplit);
+        } else {
+            int semverSplit = normalized.lastIndexOf('-');
+            if (semverSplit > 0) {
+                String suffix = normalized.substring(semverSplit + 1);
+                if (isNumericVersionSuffix(suffix)) {
+                    normalized = normalized.substring(0, semverSplit);
+                }
+            }
+        }
+
+        return normalized.replaceAll("[^a-z0-9]", "");
+    }
+
+    private ArtifactVersionToken parseArtifactVersion(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return ArtifactVersionToken.unknown();
+        }
+
+        String normalized = fileName.trim().toLowerCase(Locale.ROOT);
+        if (normalized.endsWith(".jar")) {
+            normalized = normalized.substring(0, normalized.length() - 4);
+        }
+
+        int alphaSplit = normalized.lastIndexOf("-alpha-");
+        if (alphaSplit > 0) {
+            String buildRaw = normalized.substring(alphaSplit + "-alpha-".length());
+            try {
+                return ArtifactVersionToken.alpha(Integer.parseInt(buildRaw));
+            } catch (NumberFormatException ignored) {
+                return ArtifactVersionToken.unknown();
+            }
+        }
+
+        int semverSplit = normalized.lastIndexOf('-');
+        if (semverSplit > 0) {
+            String suffix = normalized.substring(semverSplit + 1);
+            if (isNumericVersionSuffix(suffix)) {
+                List<Integer> parts = new ArrayList<>();
+                for (String part : suffix.split("\\.")) {
+                    if (part.isBlank()) {
+                        continue;
+                    }
+                    try {
+                        parts.add(Integer.parseInt(part));
+                    } catch (NumberFormatException ignored) {
+                        return ArtifactVersionToken.unknown();
+                    }
+                }
+                if (!parts.isEmpty()) {
+                    return ArtifactVersionToken.semver(parts);
+                }
+            }
+        }
+
+        return ArtifactVersionToken.unknown();
+    }
+
+    private boolean isNumericVersionSuffix(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (!Character.isDigit(c) && c != '.') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int compareArtifactVersions(ArtifactVersionToken left, ArtifactVersionToken right) {
+        if (left.kind() != right.kind()) {
+            return Integer.compare(left.kind().priority, right.kind().priority);
+        }
+
+        if (left.kind() == ArtifactVersionKind.ALPHA) {
+            return Integer.compare(left.alphaBuild(), right.alphaBuild());
+        }
+
+        if (left.kind() == ArtifactVersionKind.SEMVER) {
+            int max = Math.max(left.semverParts().size(), right.semverParts().size());
+            for (int i = 0; i < max; i++) {
+                int l = i < left.semverParts().size() ? left.semverParts().get(i) : 0;
+                int r = i < right.semverParts().size() ? right.semverParts().get(i) : 0;
+                if (l != r) {
+                    return Integer.compare(l, r);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    private enum ArtifactVersionKind {
+        UNKNOWN(0),
+        ALPHA(1),
+        SEMVER(2);
+
+        private final int priority;
+
+        ArtifactVersionKind(int priority) {
+            this.priority = priority;
+        }
+    }
+
+    private record ArtifactVersionToken(ArtifactVersionKind kind, int alphaBuild, List<Integer> semverParts) {
+        private static ArtifactVersionToken unknown() {
+            return new ArtifactVersionToken(ArtifactVersionKind.UNKNOWN, -1, List.of());
+        }
+
+        private static ArtifactVersionToken alpha(int build) {
+            return new ArtifactVersionToken(ArtifactVersionKind.ALPHA, build, List.of());
+        }
+
+        private static ArtifactVersionToken semver(List<Integer> parts) {
+            return new ArtifactVersionToken(ArtifactVersionKind.SEMVER, -1, parts == null ? List.of() : List.copyOf(parts));
         }
     }
 }

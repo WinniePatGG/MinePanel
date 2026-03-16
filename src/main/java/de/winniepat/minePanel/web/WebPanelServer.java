@@ -16,6 +16,7 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
 import spark.*;
 
+import java.io.IOException;
 import java.net.*;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
@@ -1865,6 +1866,7 @@ public final class WebPanelServer {
 
         List<Map<String, Object>> installedWithStatus = new ArrayList<>();
         Set<String> installedIds = new HashSet<>();
+        Set<String> outdatedInstalledIds = new HashSet<>();
         for (Map<String, Object> installedEntry : installed) {
             Map<String, Object> row = new HashMap<>(installedEntry);
             String source = String.valueOf(installedEntry.getOrDefault("source", ""));
@@ -1895,6 +1897,12 @@ public final class WebPanelServer {
                     row.put("outdated", true);
                     row.put("statusText", "Outdated (latest: " + latest.versionLabel() + ")");
                     row.put("latestVersion", latest.versionLabel());
+                    if (!extensionId.isBlank()) {
+                        outdatedInstalledIds.add(extensionId);
+                    }
+                    if (!sourceExtensionId.isBlank()) {
+                        outdatedInstalledIds.add(sourceExtensionId);
+                    }
                 } else if (comparison >= 0) {
                     row.put("status", "up_to_date");
                     row.put("outdated", false);
@@ -1920,6 +1928,8 @@ public final class WebPanelServer {
             String extensionId = normalizeExtensionKey(String.valueOf(availableEntry.getOrDefault("extensionId", "")));
             if (!extensionId.isBlank() && restartRequiredSnapshot.contains(extensionId)) {
                 row.put("installState", "restart_required");
+            } else if (!extensionId.isBlank() && outdatedInstalledIds.contains(extensionId)) {
+                row.put("installState", "outdated");
             } else if (!extensionId.isBlank() && installedIds.contains(extensionId)) {
                 row.put("installState", "installed");
             } else {
@@ -1996,23 +2006,84 @@ public final class WebPanelServer {
                 return json(response, 400, Map.of("error", "invalid_file_name"));
             }
 
+            ArtifactCleanupResult cleanupResult = removeExistingExtensionArtifacts(extensionDirectory, extensionId, fileName);
             downloadExtensionAsset(downloadUrl, destination);
+
             synchronized (restartRequiredExtensionIds) {
                 restartRequiredExtensionIds.add(extensionId);
             }
-            panelLogger.log("PANEL", "EXTENSIONS", "Downloaded extension " + fileName + " to " + destination.getFileName() + " by " + userSession.username());
 
-            return json(response, 200, Map.of(
-                    "ok", true,
-                    "fileName", fileName,
-                    "extensionId", extensionId,
-                    "requiresRestart", true,
-                    "message", "Downloaded to plugins/MinePanel/extensions. Restart required."
-            ));
+            panelLogger.log("PANEL", "EXTENSIONS", "Downloaded extension " + fileName + " to " + destination.getFileName() + " by " + userSession.username());
+            if (!cleanupResult.removedArtifacts().isEmpty()) {
+                panelLogger.log("PANEL", "EXTENSIONS", "Removed old extension artifact(s) for " + extensionId + ": " + String.join(", ", cleanupResult.removedArtifacts()));
+            }
+            if (!cleanupResult.pendingCleanupArtifacts().isEmpty()) {
+                panelLogger.log("PANEL", "EXTENSIONS", "Extension artifact(s) still in use for " + extensionId + ": " + String.join(", ", cleanupResult.pendingCleanupArtifacts()));
+            }
+
+            Map<String, Object> responsePayload = new HashMap<>();
+            responsePayload.put("ok", true);
+            responsePayload.put("fileName", fileName);
+            responsePayload.put("extensionId", extensionId);
+            responsePayload.put("requiresRestart", true);
+            if (cleanupResult.pendingCleanupArtifacts().isEmpty()) {
+                responsePayload.put("message", "Downloaded to plugins/MinePanel/extensions. Restart required.");
+            } else {
+                responsePayload.put("message", "Downloaded update, but old jar is currently in use. Restart required.");
+            }
+            responsePayload.put("removedArtifacts", cleanupResult.removedArtifacts());
+            responsePayload.put("pendingCleanupArtifacts", cleanupResult.pendingCleanupArtifacts());
+            return json(response, 200, responsePayload);
+        } catch (IllegalStateException exception) {
+            plugin.getLogger().warning("Could not replace extension asset " + fileName + ": " + exception.getMessage());
+            return json(response, 409, Map.of("error", "extension_replace_failed", "details", exception.getMessage()));
         } catch (Exception exception) {
             plugin.getLogger().warning("Could not install extension asset " + fileName + ": " + exception.getMessage());
             return json(response, 500, Map.of("error", "extension_install_failed"));
         }
+    }
+
+    private ArtifactCleanupResult removeExistingExtensionArtifacts(Path extensionDirectory, String extensionId, String selectedFileName) {
+        List<String> removed = new ArrayList<>();
+        List<String> pendingCleanup = new ArrayList<>();
+        String normalizedSelected = selectedFileName == null ? "" : selectedFileName.trim().toLowerCase(Locale.ROOT);
+
+        try (var files = Files.list(extensionDirectory)) {
+            for (Path candidate : files.toList()) {
+                if (!Files.isRegularFile(candidate)) {
+                    continue;
+                }
+
+                String candidateFileName = candidate.getFileName().toString();
+                String loweredCandidate = candidateFileName.toLowerCase(Locale.ROOT);
+                if (!loweredCandidate.endsWith(".jar") || loweredCandidate.equals(normalizedSelected)) {
+                    continue;
+                }
+
+                String candidateExtensionId = normalizeExtensionKey(parseExtensionId(candidateFileName));
+                if (candidateExtensionId.isBlank() || !candidateExtensionId.equals(extensionId)) {
+                    continue;
+                }
+
+                try {
+                    Files.deleteIfExists(candidate);
+                    removed.add(candidateFileName);
+                } catch (Exception exception) {
+                    if (exception instanceof FileSystemException || exception instanceof AccessDeniedException) {
+                        pendingCleanup.add(candidateFileName);
+                        continue;
+                    }
+                    throw new IllegalStateException("Could not delete old extension artifact " + candidateFileName + ": " + exception.getMessage(), exception);
+                }
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not read extension directory", exception);
+        }
+
+        return new ArtifactCleanupResult(List.copyOf(removed), List.copyOf(pendingCleanup));
+    }
+
+    private record ArtifactCleanupResult(List<String> removedArtifacts, List<String> pendingCleanupArtifacts) {
     }
 
     private String handleExtensionReload(Request request, Response response) {

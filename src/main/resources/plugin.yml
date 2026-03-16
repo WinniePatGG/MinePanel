@@ -11,3 +11,6 @@ permissions:
   minepanel.report:
     description: Allows players to create reports via /report.
     default: true
+  minepanel.ticket:
+    description: Allows players to create support tickets via /ticket.
+    default: true

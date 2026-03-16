@@ -208,6 +208,11 @@ public final class WebPanelServer {
             return webAssetService.readText("dashboard-reports.html");
         });
 
+        get("/dashboard/tickets", (request, response) -> {
+            response.type("text/html");
+            return webAssetService.readText("dashboard-tickets.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return webAssetService.readText("panel.css");

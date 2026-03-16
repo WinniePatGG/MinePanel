@@ -44,6 +44,7 @@
         }
 
         ensurePanelExtensionsLink(sideNav);
+        enforceServerCategoryOrder(sideNav);
 
         try {
             const response = await fetch('/api/extensions/navigation', { credentials: 'same-origin' });
@@ -54,6 +55,7 @@
             const payload = await response.json();
             const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
             if (tabs.length === 0) {
+                enforceServerCategoryOrder(sideNav);
                 return;
             }
 
@@ -84,8 +86,56 @@
                 container.appendChild(link);
                 existingHrefs.add(href);
             }
+
+            enforceServerCategoryOrder(sideNav);
         } catch (ignored) {
             // Ignore extension tab loading issues on login/setup pages.
+            enforceServerCategoryOrder(sideNav);
+        }
+    }
+
+    function enforceServerCategoryOrder(sideNav) {
+        const serverContainer = sideNav.querySelector('.side-category-items[data-category-items="server"]');
+        if (!serverContainer) {
+            return;
+        }
+
+        const preferredOrder = [
+            '/console',
+            '/dashboard/console',
+            '/dashboard/resources',
+            '/dashboard/players',
+            '/dashboard/bans',
+            '/dashboard/plugins',
+            '/dashboard/reports',
+            '/dashboard/tickets'
+        ];
+
+        const links = Array.from(serverContainer.querySelectorAll('a.side-link'));
+        if (links.length <= 1) {
+            return;
+        }
+
+        links.sort((left, right) => {
+            const leftHref = left.getAttribute('href') || '';
+            const rightHref = right.getAttribute('href') || '';
+            const leftIndex = preferredOrder.indexOf(leftHref);
+            const rightIndex = preferredOrder.indexOf(rightHref);
+
+            if (leftIndex >= 0 && rightIndex >= 0) {
+                return leftIndex - rightIndex;
+            }
+            if (leftIndex >= 0) {
+                return -1;
+            }
+            if (rightIndex >= 0) {
+                return 1;
+            }
+            return leftHref.localeCompare(rightHref);
+        });
+
+        for (const link of links) {
+            serverContainer.appendChild(link);
         }
     }
 

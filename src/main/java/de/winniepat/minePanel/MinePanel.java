@@ -263,14 +263,7 @@ public final class MinePanel extends JavaPlugin {
                 output.append(Instant.now()).append(" [SYSTEM] [PLUGIN] No panel logs available during shutdown export").append(System.lineSeparator());
             }
 
-            Files.writeString(
-                    exportFile,
-                    output,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE
-            );
+            Files.writeString(exportFile, output, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
 
             getLogger().info("Exported panel logs to " + exportFile.toAbsolutePath());
         } catch (IOException | IllegalStateException exception) {

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Tickets</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+                <a class="side-link" href="/dashboard/reports">Reports</a>
+                <a class="side-link active" href="/dashboard/tickets">Tickets</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Tickets</h1>
+        <div class="toolbar">
+            <select id="ticketStatusFilter" style="width:auto;min-width:180px;">
+                <option value="">All statuses</option>
+                <option value="OPEN">Open</option>
+                <option value="CLOSED">Closed</option>
+            </select>
+            <button id="refreshTickets" class="secondary">Refresh</button>
+        </div>
+
+        <section class="card">
+            <h2>Player Tickets</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Player</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Handled By</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="ticketsBody"></tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const expanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expanded);
+                toggle.classList.toggle('expanded', expanded);
+                savedState[category] = expanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    function formatDate(timestamp) {
+        if (!timestamp || Number(timestamp) <= 0) return '-';
+        return new Date(Number(timestamp)).toLocaleString();
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    async function loadTickets() {
+        const status = document.getElementById('ticketStatusFilter').value;
+        const url = status ? `/api/extensions/tickets?status=${encodeURIComponent(status)}` : '/api/extensions/tickets';
+        const data = await api(url);
+
+        const body = document.getElementById('ticketsBody');
+        body.innerHTML = '';
+
+        if (!Array.isArray(data.tickets) || data.tickets.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 8;
+            cell.textContent = 'No tickets found';
+            row.appendChild(cell);
+            body.appendChild(row);
+            return;
+        }
+
+        data.tickets.forEach(ticket => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>#${ticket.id}</td>
+                <td>${ticket.creatorName}</td>
+                <td>${ticket.category}</td>
+                <td>${ticket.description}</td>
+                <td>${ticket.status}</td>
+                <td>${formatDate(ticket.createdAt)}</td>
+                <td>${ticket.handledBy || '-'}</td>
+                <td></td>
+            `;
+
+            const actionsCell = row.lastElementChild;
+            if (ticket.status === 'OPEN') {
+                const closeButton = document.createElement('button');
+                closeButton.className = 'secondary';
+                closeButton.style.width = 'auto';
+                closeButton.textContent = 'Close';
+                closeButton.addEventListener('click', async () => {
+                    await api(`/api/extensions/tickets/${ticket.id}/close`, { method: 'POST' });
+                    await loadTickets();
+                });
+                actionsCell.appendChild(closeButton);
+            } else {
+                const reopenButton = document.createElement('button');
+                reopenButton.style.width = 'auto';
+                reopenButton.textContent = 'Reopen';
+                reopenButton.addEventListener('click', async () => {
+                    await api(`/api/extensions/tickets/${ticket.id}/reopen`, { method: 'POST' });
+                    await loadTickets();
+                });
+                actionsCell.appendChild(reopenButton);
+            }
+
+            body.appendChild(row);
+        });
+    }
+
+    document.getElementById('refreshTickets').addEventListener('click', loadTickets);
+    document.getElementById('ticketStatusFilter').addEventListener('change', loadTickets);
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadTickets();
+            setInterval(() => loadTickets().catch(() => {}), 5000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

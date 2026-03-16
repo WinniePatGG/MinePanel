@@ -104,6 +104,7 @@
             '/console',
             '/dashboard/console',
             '/dashboard/resources',
+            '/dashboard/world-backups',
             '/dashboard/players',
             '/dashboard/bans',
             '/dashboard/plugins',

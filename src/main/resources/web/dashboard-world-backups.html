@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - World Backups</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link active" href="/dashboard/world-backups">Backups</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+                <a class="side-link" href="/dashboard/reports">Reports</a>
+                <a class="side-link" href="/dashboard/tickets">Tickets</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>World Backups</h1>
+        <p>Create separate backups for Overworld, Nether and End. Backups are saved to <code>plugins/MinePanel/backups</code>.</p>
+
+        <section class="card">
+            <h2>Create Backup</h2>
+            <div class="toolbar">
+                <select id="backupWorld" style="width:auto;min-width:180px;">
+                    <option value="overworld">Overworld</option>
+                    <option value="nether">Nether</option>
+                    <option value="end">End</option>
+                </select>
+                <input id="backupName" placeholder="Backup name (example: before-update)">
+                <button id="createBackup">Create Backup</button>
+            </div>
+            <p id="backupStatus" class="status-line"></p>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Overworld Backups</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>File</th>
+                    <th>Created</th>
+                    <th>Size</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="overworldBackups"></tbody>
+            </table>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Nether Backups</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>File</th>
+                    <th>Created</th>
+                    <th>Size</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="netherBackups"></tbody>
+            </table>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>End Backups</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>File</th>
+                    <th>Created</th>
+                    <th>Size</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="endBackups"></tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const expanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expanded);
+                toggle.classList.toggle('expanded', expanded);
+                savedState[category] = expanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            const detail = payload && payload.details ? ` (${payload.details})` : '';
+            throw new Error(`${payload.error || 'request_failed'}${detail}`);
+        }
+        return payload;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function formatDate(value) {
+        if (!value || Number(value) <= 0) {
+            return '-';
+        }
+        return new Date(Number(value)).toLocaleString();
+    }
+
+    function formatSize(bytes) {
+        const value = Number(bytes) || 0;
+        if (value < 1024) return `${value} B`;
+        const kb = value / 1024;
+        if (kb < 1024) return `${kb.toFixed(1)} KB`;
+        const mb = kb / 1024;
+        if (mb < 1024) return `${mb.toFixed(1)} MB`;
+        const gb = mb / 1024;
+        return `${gb.toFixed(2)} GB`;
+    }
+
+    function renderBackupList(world, backups) {
+        const body = document.getElementById(`${world}Backups`);
+        body.innerHTML = '';
+
+        if (!Array.isArray(backups) || backups.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 5;
+            cell.textContent = 'No backups yet';
+            row.appendChild(cell);
+            body.appendChild(row);
+            return;
+        }
+
+        for (const backup of backups) {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${backup.name || '-'}</td>
+                <td>${backup.fileName || '-'}</td>
+                <td>${formatDate(backup.createdAt)}</td>
+                <td>${formatSize(backup.sizeBytes)}</td>
+                <td></td>
+            `;
+
+            const actionsCell = row.lastElementChild;
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'secondary';
+            deleteButton.style.width = 'auto';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', async () => {
+                await deleteBackup(world, backup.fileName);
+            });
+            actionsCell.appendChild(deleteButton);
+            body.appendChild(row);
+        }
+    }
+
+    async function deleteBackup(world, fileName) {
+        const status = document.getElementById('backupStatus');
+        if (!fileName) {
+            status.textContent = 'Delete failed: invalid file name.';
+            return;
+        }
+
+        const confirmed = window.confirm(`Delete backup ${fileName}?`);
+        if (!confirmed) {
+            return;
+        }
+
+        status.textContent = `Deleting backup ${fileName}...`;
+        try {
+            await api('/api/extensions/world-backups/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ world, fileName })
+            });
+            status.textContent = `Deleted backup ${fileName}.`;
+            await loadBackups();
+        } catch (error) {
+            status.textContent = `Delete failed: ${error.message}`;
+        }
+    }
+
+    async function loadBackups() {
+        const data = await api('/api/extensions/world-backups');
+        renderBackupList('overworld', data.overworld || []);
+        renderBackupList('nether', data.nether || []);
+        renderBackupList('end', data.end || []);
+    }
+
+    async function createBackup() {
+        const world = document.getElementById('backupWorld').value;
+        const name = document.getElementById('backupName').value.trim();
+        const status = document.getElementById('backupStatus');
+
+        if (!name) {
+            status.textContent = 'Please enter a backup name.';
+            return;
+        }
+
+        status.textContent = 'Creating backup...';
+        try {
+            await api('/api/extensions/world-backups/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ world, name })
+            });
+            status.textContent = 'Backup created successfully.';
+            document.getElementById('backupName').value = '';
+            await loadBackups();
+        } catch (error) {
+            status.textContent = `Backup failed: ${error.message}`;
+        }
+    }
+
+    document.getElementById('createBackup').addEventListener('click', createBackup);
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadBackups();
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

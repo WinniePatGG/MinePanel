@@ -28,6 +28,13 @@ public final class Database {
                     + "created_at INTEGER NOT NULL"
                     + ")");
 
+            statement.execute("CREATE TABLE IF NOT EXISTS user_permissions ("
+                    + "user_id INTEGER NOT NULL,"
+                    + "permission TEXT NOT NULL,"
+                    + "PRIMARY KEY(user_id, permission),"
+                    + "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+                    + ")");
+
             statement.execute("CREATE TABLE IF NOT EXISTS sessions ("
                     + "token TEXT PRIMARY KEY,"
                     + "user_id INTEGER NOT NULL,"

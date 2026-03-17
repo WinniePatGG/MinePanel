@@ -33,7 +33,7 @@ public final class LuckPermsExtension implements MinePanelExtension {
 
     @Override
     public void registerWebRoutes(ExtensionWebRegistry webRegistry) {
-        webRegistry.get("/api/extensions/luckperms/player/:uuid", PanelPermission.VIEW_DASHBOARD, (request, response, user) -> {
+        webRegistry.get("/api/extensions/luckperms/player/:uuid", PanelPermission.VIEW_LUCKPERMS, (request, response, user) -> {
             UUID playerUuid;
             try {
                 playerUuid = UUID.fromString(request.params("uuid"));

@@ -58,13 +58,13 @@ public final class ReportSystemExtension implements MinePanelExtension {
 
     @Override
     public void registerWebRoutes(ExtensionWebRegistry webRegistry) {
-        webRegistry.get("/api/extensions/reports", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.get("/api/extensions/reports", PanelPermission.VIEW_REPORTS, (request, response, user) -> {
             String status = request.queryParams("status");
             List<Map<String, Object>> reports = reportRepository.listReports(status).stream().map(this::toReportPayload).toList();
             return webRegistry.json(response, 200, Map.of("reports", reports));
         });
 
-        webRegistry.post("/api/extensions/reports/:id/resolve", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/reports/:id/resolve", PanelPermission.MANAGE_REPORTS, (request, response, user) -> {
             long reportId = parseReportId(request.params("id"));
             if (reportId <= 0) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_report_id"));
@@ -79,7 +79,7 @@ public final class ReportSystemExtension implements MinePanelExtension {
             return webRegistry.json(response, 200, Map.of("ok", true));
         });
 
-        webRegistry.post("/api/extensions/reports/:id/ban", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/reports/:id/ban", PanelPermission.MANAGE_REPORTS, (request, response, user) -> {
             long reportId = parseReportId(request.params("id"));
             if (reportId <= 0) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_report_id"));

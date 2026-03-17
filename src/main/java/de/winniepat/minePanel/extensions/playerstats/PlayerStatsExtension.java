@@ -34,7 +34,7 @@ public final class PlayerStatsExtension implements MinePanelExtension {
 
     @Override
     public void registerWebRoutes(ExtensionWebRegistry webRegistry) {
-        webRegistry.get("/api/extensions/player-stats/player/:uuid", PanelPermission.VIEW_DASHBOARD, (request, response, user) -> {
+        webRegistry.get("/api/extensions/player-stats/player/:uuid", PanelPermission.VIEW_PLAYER_STATS, (request, response, user) -> {
             UUID playerUuid;
             try {
                 playerUuid = UUID.fromString(request.params("uuid"));

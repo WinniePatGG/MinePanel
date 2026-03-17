@@ -55,7 +55,7 @@ public final class PlayerManagementExtension implements MinePanelExtension {
 
     @Override
     public void registerWebRoutes(ExtensionWebRegistry webRegistry) {
-        webRegistry.post("/api/extensions/player-management/mute", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/player-management/mute", PanelPermission.MANAGE_PLAYER_MANAGEMENT, (request, response, user) -> {
             MutePayload payload = gson.fromJson(request.body(), MutePayload.class);
             if (payload == null || (isBlank(payload.uuid()) && isBlank(payload.username()))) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_payload"));
@@ -87,7 +87,7 @@ public final class PlayerManagementExtension implements MinePanelExtension {
             return webRegistry.json(response, 200, resultPayload);
         });
 
-        webRegistry.post("/api/extensions/player-management/unmute", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/player-management/unmute", PanelPermission.MANAGE_PLAYER_MANAGEMENT, (request, response, user) -> {
             UnmutePayload payload = gson.fromJson(request.body(), UnmutePayload.class);
             if (payload == null || (isBlank(payload.uuid()) && isBlank(payload.username()))) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_payload"));
@@ -107,7 +107,7 @@ public final class PlayerManagementExtension implements MinePanelExtension {
             return webRegistry.json(response, 200, Map.of("ok", true));
         });
 
-        webRegistry.get("/api/extensions/player-management/mute/:uuid", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.get("/api/extensions/player-management/mute/:uuid", PanelPermission.VIEW_PLAYER_MANAGEMENT, (request, response, user) -> {
             UUID uuid;
             try {
                 uuid = UUID.fromString(request.params("uuid"));

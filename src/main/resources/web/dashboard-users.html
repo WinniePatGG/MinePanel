@@ -6,6 +6,104 @@
     <title>MinePanel Dashboard - Users</title>
     <link rel="stylesheet" href="/panel.css">
     <script src="/theme.js"></script>
+    <style>
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+            white-space: nowrap;
+        }
+
+        .permissions-shell {
+            display: grid;
+            gap: 10px;
+        }
+
+        .permission-group {
+            border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.14));
+            border-radius: 10px;
+            background: var(--theme-surface-2, rgba(16, 20, 30, 0.82));
+            overflow: hidden;
+        }
+
+        .permission-group details {
+            display: block;
+        }
+
+        .permission-group-toggle {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border: none;
+            border-bottom: 1px solid transparent;
+            background: transparent;
+            color: inherit;
+            padding: 10px 12px;
+            text-align: left;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .permission-group-toggle::-webkit-details-marker {
+            display: none;
+        }
+
+        .permission-group.open .permission-group-toggle {
+            border-bottom-color: var(--theme-border, rgba(255, 255, 255, 0.12));
+        }
+
+        .permission-group-title {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .permission-group-meta {
+            font-size: 12px;
+            opacity: 0.75;
+        }
+
+        .permission-group-chevron {
+            font-size: 12px;
+            opacity: 0.75;
+            transition: transform 0.15s ease;
+        }
+
+        .permission-group.open .permission-group-chevron {
+            transform: rotate(180deg);
+        }
+
+        .permission-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 8px;
+            padding: 10px 12px 12px;
+        }
+
+        .permission-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
+            border-radius: 8px;
+            padding: 7px 9px;
+            background: var(--theme-surface-3, rgba(255, 255, 255, 0.02));
+        }
+
+        .permission-row input[type="checkbox"] {
+            margin: 0;
+        }
+
+        .permission-row.disabled {
+            opacity: 0.6;
+        }
+    </style>
 </head>
 <body>
 <div class="layout">
@@ -37,20 +135,53 @@
         <section class="card spaced-top">
             <h2>User Management</h2>
             <div class="inline-form">
-                <input id="newUsername" placeholder="Username">
-                <input id="newPassword" type="password" placeholder="Password">
-                <select id="newRole">
-                    <option>VIEWER</option>
-                    <option>ADMIN</option>
-                    <option>OWNER</option>
-                </select>
-                <button id="createUser">Create User</button>
+                <button id="openCreateWizard" type="button">New User</button>
             </div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Save Role</th><th>Delete</th></tr></thead>
-                    <tbody id="users"></tbody>
-                </table>
+
+            <div id="usersMainContent" class="spaced-top">
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Save Role</th><th>Permissions</th><th>Delete</th></tr></thead>
+                        <tbody id="users"></tbody>
+                    </table>
+                </div>
+                <div id="permissionEditor" class="spaced-top" style="display:none;">
+                    <h3 id="permissionEditorTitle">Edit permissions</h3>
+                    <div id="permissionEditorGroups"></div>
+                    <div class="spaced-top">
+                        <button id="savePermissions">Save Permissions</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="createUserWizard" class="spaced-top" style="display:none;">
+                <h3 id="createWizardTitle">Create User - Step 1 of 3</h3>
+
+                <div id="wizardStep1" class="card spaced-top">
+                    <label for="wizardUsername">Username</label>
+                    <input id="wizardUsername" placeholder="Choose username">
+                </div>
+
+                <div id="wizardStep2" class="card spaced-top" style="display:none;">
+                    <label for="wizardPassword">Password</label>
+                    <input id="wizardPassword" type="password" placeholder="Choose password (min. 10 chars)">
+                </div>
+
+                <div id="wizardStep3" class="card spaced-top" style="display:none;">
+                    <label for="wizardRole">Role Preset</label>
+                    <select id="wizardRole">
+                        <option>VIEWER</option>
+                        <option>ADMIN</option>
+                    </select>
+                    <div id="wizardPermissionGroups" class="spaced-top"></div>
+                </div>
+
+                <div class="inline-form spaced-top">
+                    <button id="wizardCancel" type="button" class="secondary">Cancel</button>
+                    <button id="wizardBack" type="button" class="secondary">Back</button>
+                    <button id="wizardNext" type="button">Next</button>
+                    <button id="wizardCreate" type="button" style="display:none;">Create User</button>
+                </div>
             </div>
             <p id="userStatus" class="action-status"></p>
         </section>
@@ -58,6 +189,19 @@
 </div>
 
 <script>
+    let permissionCatalog = [];
+    let roleDefaults = {};
+    let usersById = new Map();
+    let selectedUserId = null;
+    const permissionGroupStateKey = 'minepanel.permissions.groupState';
+    const createWizardState = {
+        step: 1,
+        username: '',
+        password: '',
+        role: 'VIEWER',
+        permissions: []
+    };
+
     function initSidebarCategories() {
         const storageKey = 'minepanel.sidebar.categories';
         let savedState = {};
@@ -112,18 +256,182 @@
         document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
     }
 
+    function groupedPermissions() {
+        const grouped = new Map();
+        permissionCatalog.forEach(permission => {
+            const category = permission.category || 'Other';
+            if (!grouped.has(category)) grouped.set(category, []);
+            grouped.get(category).push(permission);
+        });
+        return grouped;
+    }
+
+    function loadPermissionGroupState() {
+        try {
+            return JSON.parse(sessionStorage.getItem(permissionGroupStateKey) || '{}') || {};
+        } catch (ignored) {
+            return {};
+        }
+    }
+
+    function savePermissionGroupState(state) {
+        try {
+            sessionStorage.setItem(permissionGroupStateKey, JSON.stringify(state));
+        } catch (ignored) {
+            // Ignore unavailable sessionStorage.
+        }
+    }
+
+    function renderPermissionCheckboxes(container, selectedPermissions, prefix, disabled) {
+        const groups = groupedPermissions();
+        const state = loadPermissionGroupState();
+        container.innerHTML = '';
+        container.classList.add('permissions-shell');
+
+        let groupIndex = 0;
+
+        groups.forEach((items, category) => {
+            const card = document.createElement('div');
+            card.className = 'permission-group';
+
+            const groupId = `${prefix}:${category}`;
+            const hasSavedState = Object.prototype.hasOwnProperty.call(state, groupId);
+            const isOpen = hasSavedState ? state[groupId] === true : groupIndex === 0;
+
+            const details = document.createElement('details');
+            details.open = isOpen;
+            details.addEventListener('toggle', () => {
+                state[groupId] = details.open;
+                savePermissionGroupState(state);
+                card.classList.toggle('open', details.open);
+            });
+
+            if (details.open) {
+                card.classList.add('open');
+            }
+
+            const toggle = document.createElement('summary');
+            toggle.className = 'permission-group-toggle';
+            toggle.innerHTML = `
+                <span>
+                    <span class="permission-group-title">${category}</span>
+                    <span class="permission-group-meta">${items.length} permission${items.length === 1 ? '' : 's'}</span>
+                </span>
+                <span class="permission-group-chevron">▼</span>
+            `;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'permission-grid';
+
+            items.forEach(permission => {
+                const id = `${prefix}_${permission.key}`;
+                const checked = selectedPermissions.has(permission.key) ? 'checked' : '';
+                const lock = disabled ? 'disabled' : '';
+                const row = document.createElement('label');
+                row.className = `permission-row${disabled ? ' disabled' : ''}`;
+                row.innerHTML = `<input type="checkbox" id="${id}" data-permission="${permission.key}" ${checked} ${lock}><span>${permission.label}</span>`;
+                wrapper.appendChild(row);
+            });
+
+            details.appendChild(toggle);
+            details.appendChild(wrapper);
+            card.appendChild(details);
+            container.appendChild(card);
+            groupIndex++;
+        });
+    }
+
+    function selectedPermissionsFromContainer(container) {
+        const selected = [];
+        container.querySelectorAll('input[type="checkbox"][data-permission]').forEach(input => {
+            if (input.checked) selected.push(input.getAttribute('data-permission'));
+        });
+        return selected;
+    }
+
+    function defaultPermissionsForRole(role) {
+        return new Set(Array.isArray(roleDefaults[role]) ? roleDefaults[role] : []);
+    }
+
+    function setCreateWizardVisible(visible) {
+        document.getElementById('usersMainContent').style.display = visible ? 'none' : '';
+        document.getElementById('createUserWizard').style.display = visible ? '' : 'none';
+    }
+
+    function resetCreateWizard() {
+        createWizardState.step = 1;
+        createWizardState.username = '';
+        createWizardState.password = '';
+        createWizardState.role = 'VIEWER';
+        createWizardState.permissions = [];
+        document.getElementById('wizardUsername').value = '';
+        document.getElementById('wizardPassword').value = '';
+        document.getElementById('wizardRole').value = 'VIEWER';
+        renderCreateWizardStep();
+    }
+
+    function captureWizardPermissions() {
+        const groups = document.getElementById('wizardPermissionGroups');
+        if (groups && groups.children.length > 0) {
+            createWizardState.permissions = selectedPermissionsFromContainer(groups);
+        }
+    }
+
+    function renderCreateWizardPermissions(useRoleDefaults) {
+        if (useRoleDefaults || !Array.isArray(createWizardState.permissions) || createWizardState.permissions.length === 0) {
+            createWizardState.permissions = Array.from(defaultPermissionsForRole(createWizardState.role));
+        }
+
+        renderPermissionCheckboxes(
+            document.getElementById('wizardPermissionGroups'),
+            new Set(createWizardState.permissions),
+            'create_wizard',
+            false
+        );
+    }
+
+    function renderCreateWizardStep() {
+        const step = createWizardState.step;
+        document.getElementById('createWizardTitle').textContent = `Create User - Step ${step} of 3`;
+
+        document.getElementById('wizardStep1').style.display = step === 1 ? '' : 'none';
+        document.getElementById('wizardStep2').style.display = step === 2 ? '' : 'none';
+        document.getElementById('wizardStep3').style.display = step === 3 ? '' : 'none';
+
+        document.getElementById('wizardBack').style.display = step === 1 ? 'none' : '';
+        document.getElementById('wizardNext').style.display = step === 3 ? 'none' : '';
+        document.getElementById('wizardCreate').style.display = step === 3 ? '' : 'none';
+
+        if (step === 1) {
+            document.getElementById('wizardUsername').value = createWizardState.username;
+        } else if (step === 2) {
+            document.getElementById('wizardPassword').value = createWizardState.password;
+        } else if (step === 3) {
+            document.getElementById('wizardRole').value = createWizardState.role;
+            renderCreateWizardPermissions(false);
+        }
+    }
+
     async function loadUsers() {
         const data = await api('/api/users');
+        permissionCatalog = Array.isArray(data.permissions) ? data.permissions : [];
+        roleDefaults = data.roleDefaults || {};
+
+        usersById = new Map();
+        (Array.isArray(data.users) ? data.users : []).forEach(user => usersById.set(String(user.id), user));
+
+
         const tbody = document.getElementById('users');
         tbody.innerHTML = '';
         data.users.forEach(user => {
             const tr = document.createElement('tr');
-            const ownerLocked = user.role === 'OWNER';
+            const ownerLocked = !!user.isOwner;
             tr.innerHTML = `<td>${user.id}</td><td>${user.username}</td><td>
-                <select data-id="${user.id}">
-                    ${['VIEWER','ADMIN','OWNER'].map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                <select data-id="${user.id}" ${ownerLocked ? 'disabled' : ''}>
+                    ${['VIEWER','ADMIN'].map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}
                 </select>
             </td><td><button data-save="${user.id}">Save</button></td>
+            <td><span class="muted">-</span></td>
             <td><button data-delete="${user.id}" ${ownerLocked ? 'disabled title="Owner users cannot be deleted"' : ''}>Delete</button></td>`;
             tbody.appendChild(tr);
         });
@@ -131,6 +439,12 @@
         tbody.querySelectorAll('button[data-save]').forEach(button => {
             button.addEventListener('click', async () => {
                 const id = button.getAttribute('data-save');
+                const user = usersById.get(id);
+                if (user && user.isOwner) {
+                    setStatus('Owner role cannot be changed.', true);
+                    return;
+                }
+
                 const role = tbody.querySelector(`select[data-id="${id}"]`).value;
                 try {
                     await api(`/api/users/${id}/role`, {
@@ -144,6 +458,21 @@
                     setStatus(`Failed to update user role: ${error.message}`, true);
                 }
             });
+        });
+
+        tbody.querySelectorAll('tr').forEach(row => {
+            const id = row.querySelector('button[data-save]')?.getAttribute('data-save');
+            const user = id ? usersById.get(id) : null;
+            const permissionsCell = row.children[4];
+            if (!permissionsCell || !user) return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = user.isOwner ? 'Owner (all permissions)' : 'Edit Permissions';
+            button.disabled = !!user.isOwner;
+            button.addEventListener('click', () => openPermissionEditor(user));
+            permissionsCell.innerHTML = '';
+            permissionsCell.appendChild(button);
         });
 
         tbody.querySelectorAll('button[data-delete]').forEach(button => {
@@ -168,6 +497,18 @@
         });
     }
 
+    function openPermissionEditor(user) {
+        selectedUserId = String(user.id);
+        const editor = document.getElementById('permissionEditor');
+        const title = document.getElementById('permissionEditorTitle');
+        const groups = document.getElementById('permissionEditorGroups');
+
+        title.textContent = `Permissions: ${user.username}`;
+        const selected = new Set(Array.isArray(user.permissions) ? user.permissions : []);
+        renderPermissionCheckboxes(groups, selected, `edit_${user.id}`, false);
+        editor.style.display = 'block';
+    }
+
     document.getElementById('logout').addEventListener('click', async () => {
         try {
             await api('/api/logout', { method: 'POST' });
@@ -177,22 +518,94 @@
         }
     });
 
-    document.getElementById('createUser').addEventListener('click', async () => {
+    document.getElementById('openCreateWizard').addEventListener('click', () => {
+        resetCreateWizard();
+        setCreateWizardVisible(true);
+    });
+
+    document.getElementById('wizardCancel').addEventListener('click', () => {
+        captureWizardPermissions();
+        setCreateWizardVisible(false);
+        setStatus('', false);
+    });
+
+    document.getElementById('wizardBack').addEventListener('click', () => {
+        if (createWizardState.step === 3) {
+            captureWizardPermissions();
+        }
+        createWizardState.step = Math.max(1, createWizardState.step - 1);
+        renderCreateWizardStep();
+    });
+
+    document.getElementById('wizardNext').addEventListener('click', () => {
+        if (createWizardState.step === 1) {
+            const username = document.getElementById('wizardUsername').value.trim();
+            if (username.length < 3) {
+                setStatus('Username must be at least 3 characters.', true);
+                return;
+            }
+            createWizardState.username = username;
+        } else if (createWizardState.step === 2) {
+            const password = document.getElementById('wizardPassword').value;
+            if (password.length < 10) {
+                setStatus('Password must be at least 10 characters.', true);
+                return;
+            }
+            createWizardState.password = password;
+            createWizardState.permissions = Array.from(defaultPermissionsForRole(createWizardState.role));
+        }
+
+        createWizardState.step = Math.min(3, createWizardState.step + 1);
+        renderCreateWizardStep();
+        setStatus('', false);
+    });
+
+    document.getElementById('wizardRole').addEventListener('change', (event) => {
+        createWizardState.role = event.target.value;
+        renderCreateWizardPermissions(true);
+    });
+
+    document.getElementById('wizardCreate').addEventListener('click', async () => {
+        captureWizardPermissions();
         try {
             await api('/api/users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    username: document.getElementById('newUsername').value,
-                    password: document.getElementById('newPassword').value,
-                    role: document.getElementById('newRole').value
+                    username: createWizardState.username,
+                    password: createWizardState.password,
+                    role: createWizardState.role,
+                    permissions: createWizardState.permissions
                 })
             });
-            document.getElementById('newPassword').value = '';
+
             await loadUsers();
+            setCreateWizardVisible(false);
+            resetCreateWizard();
             setStatus('User created successfully.', false);
         } catch (error) {
             setStatus(`Failed to create user: ${error.message}`, true);
+        }
+    });
+
+
+    document.getElementById('savePermissions').addEventListener('click', async () => {
+        if (!selectedUserId) {
+            setStatus('No user selected.', true);
+            return;
+        }
+
+        try {
+            const permissions = selectedPermissionsFromContainer(document.getElementById('permissionEditorGroups'));
+            await api(`/api/users/${selectedUserId}/permissions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ permissions })
+            });
+            await loadUsers();
+            setStatus('Permissions updated successfully.', false);
+        } catch (error) {
+            setStatus(`Failed to update permissions: ${error.message}`, true);
         }
     });
 

@@ -247,6 +247,7 @@ public final class WebPanelServer {
             get("/users", (request, response) -> handleListUsers(request, response));
             post("/users", (request, response) -> handleCreateUser(request, response));
             post("/users/:id/role", (request, response) -> handleUpdateRole(request, response));
+            post("/users/:id/permissions", (request, response) -> handleUpdatePermissions(request, response));
             post("/users/:id/delete", (request, response) -> handleDeleteUser(request, response));
             get("/logs", (request, response) -> handleLogs(request, response));
             get("/logs/latest", (request, response) -> handleLatestLogId(request, response));
@@ -352,7 +353,7 @@ public final class WebPanelServer {
     }
 
     private String handleOverviewMetrics(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        requireUser(request, PanelPermission.VIEW_OVERVIEW);
 
         List<Map<String, Object>> tpsHistory = new ArrayList<>();
         List<Map<String, Object>> memoryHistory = new ArrayList<>();
@@ -498,18 +499,23 @@ public final class WebPanelServer {
     }
 
     private String handleMe(Request request, Response response) {
-        PanelUser user = requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        PanelUser user = requireUser(request, PanelPermission.ACCESS_PANEL);
         return json(response, 200, Map.of("user", toPublicUser(user)));
     }
 
     private String handleListUsers(Request request, Response response) {
-        requireUser(request, PanelPermission.MANAGE_USERS);
+        requireOwner(request);
+
         List<Map<String, Object>> users = userRepository.findAllUsers().stream().map(this::toPublicUser).toList();
-        return json(response, 200, Map.of("users", users));
+        return json(response, 200, Map.of(
+                "users", users,
+                "permissions", permissionCatalogForCurrentRuntime(),
+                "roleDefaults", roleDefaultsPayload()
+        ));
     }
 
     private String handleCreateUser(Request request, Response response) {
-        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_USERS);
+        PanelUser actingUser = requireOwner(request);
 
         CreateUserPayload payload = gson.fromJson(request.body(), CreateUserPayload.class);
         if (payload == null || isBlank(payload.username()) || isBlank(payload.password()) || isBlank(payload.role())) {
@@ -527,18 +533,23 @@ public final class WebPanelServer {
             return json(response, 400, Map.of("error", "invalid_role"));
         }
 
+        if (role == UserRole.OWNER) {
+            return json(response, 403, Map.of("error", "owner_creation_blocked"));
+        }
+
         if (userRepository.findByUsername(payload.username().trim()).isPresent()) {
             return json(response, 409, Map.of("error", "username_exists"));
         }
 
-        PanelUser created = userRepository.createUser(payload.username().trim(), passwordHasher.hash(payload.password()), role);
+        Set<PanelPermission> requestedPermissions = parsePermissionNames(payload.permissions());
+        PanelUser created = userRepository.createUser(payload.username().trim(), passwordHasher.hash(payload.password()), role, requestedPermissions);
         panelLogger.log("AUDIT", actingUser.username(), "Created panel user " + created.username() + " with role " + role.name());
 
         return json(response, 201, Map.of("ok", true, "user", toPublicUser(created)));
     }
 
     private String handleUpdateRole(Request request, Response response) {
-        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_USERS);
+        PanelUser actingUser = requireOwner(request);
 
         String rawId = request.params("id");
         long userId;
@@ -565,7 +576,11 @@ public final class WebPanelServer {
             return json(response, 404, Map.of("error", "user_not_found"));
         }
 
-        if (targetUser.get().role() == UserRole.OWNER && actingUser.id() != targetUser.get().id()) {
+        if (role == UserRole.OWNER) {
+            return json(response, 403, Map.of("error", "owner_creation_blocked"));
+        }
+
+        if (targetUser.get().role() == UserRole.OWNER) {
             return json(response, 403, Map.of("error", "owner_role_locked"));
         }
 
@@ -577,8 +592,41 @@ public final class WebPanelServer {
         return json(response, 200, Map.of("ok", true));
     }
 
+    private String handleUpdatePermissions(Request request, Response response) {
+        PanelUser actingUser = requireOwner(request);
+
+        String rawId = request.params("id");
+        long userId;
+        try {
+            userId = Long.parseLong(rawId);
+        } catch (NumberFormatException exception) {
+            return json(response, 400, Map.of("error", "invalid_user_id"));
+        }
+
+        Optional<PanelUser> targetUser = userRepository.findById(userId);
+        if (targetUser.isEmpty()) {
+            return json(response, 404, Map.of("error", "user_not_found"));
+        }
+        if (targetUser.get().role() == UserRole.OWNER) {
+            return json(response, 403, Map.of("error", "owner_permissions_locked"));
+        }
+
+        UpdatePermissionsPayload payload = gson.fromJson(request.body(), UpdatePermissionsPayload.class);
+        if (payload == null || payload.permissions() == null) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        Set<PanelPermission> permissions = parsePermissionNames(payload.permissions());
+        if (!userRepository.updatePermissions(userId, permissions)) {
+            return json(response, 500, Map.of("error", "permissions_update_failed"));
+        }
+
+        panelLogger.log("AUDIT", actingUser.username(), "Updated permissions for " + targetUser.get().username());
+        return json(response, 200, Map.of("ok", true));
+    }
+
     private String handleDeleteUser(Request request, Response response) {
-        PanelUser actingUser = requireUser(request, PanelPermission.MANAGE_USERS);
+        PanelUser actingUser = requireOwner(request);
 
         String rawId = request.params("id");
         long userId;
@@ -612,7 +660,7 @@ public final class WebPanelServer {
     }
 
     private String handleLogs(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_LOGS);
+        requireUser(request, PanelPermission.VIEW_CONSOLE);
 
         int limit = parseInt(request.queryParams("limit"), 200, 1, 1000);
         int consoleLines = parseInt(request.queryParams("consoleLines"), 200, 1, 2000);
@@ -639,12 +687,12 @@ public final class WebPanelServer {
     }
 
     private String handleLatestLogId(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_LOGS);
+        requireUser(request, PanelPermission.VIEW_CONSOLE);
         return json(response, 200, Map.of("latestId", logRepository.latestLogId()));
     }
 
     private String handlePlayers(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        requireUser(request, PanelPermission.VIEW_PLAYERS);
         List<Map<String, Object>> players = snapshotPlayerRoster();
         long onlineCount = players.stream()
                 .filter(player -> Boolean.TRUE.equals(player.get("online")))
@@ -658,7 +706,7 @@ public final class WebPanelServer {
     }
 
     private String handlePlayerProfile(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        requireUser(request, PanelPermission.VIEW_PLAYERS);
 
         UUID playerUuid;
         try {
@@ -738,7 +786,7 @@ public final class WebPanelServer {
     }
 
     private String handlePlugins(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        requireUser(request, PanelPermission.VIEW_PLUGINS);
         List<Map<String, Object>> plugins = snapshotInstalledPlugins();
         return json(response, 200, Map.of(
                 "count", plugins.size(),
@@ -747,7 +795,7 @@ public final class WebPanelServer {
     }
 
     private String handlePluginMarketplaceSearch(Request request, Response response) {
-        requireUser(request, PanelPermission.MANAGE_USERS);
+        requireUser(request, PanelPermission.MANAGE_PLUGINS);
 
         String source = normalizeMarketplaceSource(request.queryParams("source"));
         String query = request.queryParams("query");
@@ -769,7 +817,7 @@ public final class WebPanelServer {
     }
 
     private String handlePluginMarketplaceVersions(Request request, Response response) {
-        requireUser(request, PanelPermission.MANAGE_USERS);
+        requireUser(request, PanelPermission.MANAGE_PLUGINS);
 
         String source = normalizeMarketplaceSource(request.queryParams("source"));
         String projectId = request.queryParams("projectId");
@@ -792,7 +840,7 @@ public final class WebPanelServer {
     }
 
     private String handlePluginMarketplaceInstall(Request request, Response response) {
-        PanelUser user = requireUser(request, PanelPermission.MANAGE_USERS);
+        PanelUser user = requireUser(request, PanelPermission.MANAGE_PLUGINS);
 
         PluginInstallPayload payload = gson.fromJson(request.body(), PluginInstallPayload.class);
         if (payload == null || isBlank(payload.source()) || isBlank(payload.projectId()) || isBlank(payload.versionId())) {
@@ -847,7 +895,7 @@ public final class WebPanelServer {
     }
 
     private String handleUptime(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        requireUser(request, PanelPermission.VIEW_RESOURCES);
         long now = System.currentTimeMillis();
         return json(response, 200, Map.of(
                 "startedAt", serverStartedAtMillis,
@@ -856,7 +904,7 @@ public final class WebPanelServer {
     }
 
     private String handleHealth(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        requireUser(request, PanelPermission.VIEW_RESOURCES);
 
         Runtime runtime = Runtime.getRuntime();
         long maxMemory = runtime.maxMemory();
@@ -904,12 +952,12 @@ public final class WebPanelServer {
     }
 
     private String handleGetDiscordWebhook(Request request, Response response) {
-        requireUser(request, PanelPermission.MANAGE_USERS);
+        requireUser(request, PanelPermission.VIEW_DISCORD_WEBHOOK);
         return json(response, 200, toWebhookPayload(discordWebhookService.getConfig()));
     }
 
     private String handleSaveDiscordWebhook(Request request, Response response) {
-        requireUser(request, PanelPermission.MANAGE_USERS);
+        requireUser(request, PanelPermission.MANAGE_DISCORD_WEBHOOK);
 
         DiscordWebhookPayload payload = gson.fromJson(request.body(), DiscordWebhookPayload.class);
         if (payload == null) {
@@ -1778,20 +1826,101 @@ public final class WebPanelServer {
             throw halt(401, gson.toJson(Map.of("error", "user_not_found")));
         }
 
-        if (!user.get().role().hasPermission(permission)) {
+        if (!user.get().hasPermission(permission)) {
             throw halt(403, gson.toJson(Map.of("error", "forbidden")));
         }
 
         return user.get();
     }
 
+    private PanelUser requireOwner(Request request) {
+        PanelUser user = requireUser(request, PanelPermission.MANAGE_USERS);
+        if (user.role() != UserRole.OWNER) {
+            throw halt(403, gson.toJson(Map.of("error", "owner_required")));
+        }
+        return user;
+    }
+
     private Map<String, Object> toPublicUser(PanelUser user) {
-        return Map.of(
-                "id", user.id(),
-                "username", user.username(),
-                "role", user.role().name(),
-                "createdAt", user.createdAt()
-        );
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", user.id());
+        payload.put("username", user.username());
+        payload.put("role", user.role().name());
+        payload.put("isOwner", user.role() == UserRole.OWNER);
+        payload.put("createdAt", user.createdAt());
+        payload.put("permissions", user.permissions().stream().map(Enum::name).sorted().toList());
+        return payload;
+    }
+
+    private List<Map<String, Object>> permissionCatalogForCurrentRuntime() {
+        Set<String> installedExtensions = installedExtensionIds();
+        List<Map<String, Object>> permissions = new ArrayList<>();
+
+        for (PanelPermission permission : PanelPermission.values()) {
+            if (!permission.assignable()) {
+                continue;
+            }
+
+            String extensionId = permission.extensionId();
+            if (extensionId != null && !installedExtensions.contains(normalizeExtensionKey(extensionId))) {
+                continue;
+            }
+
+            permissions.add(Map.of(
+                    "key", permission.name(),
+                    "label", permission.label(),
+                    "category", permission.category(),
+                    "extensionId", extensionId == null ? "" : extensionId
+            ));
+        }
+
+        permissions.sort(Comparator
+                .comparing((Map<String, Object> item) -> String.valueOf(item.get("category")), String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(item -> String.valueOf(item.get("label")), String.CASE_INSENSITIVE_ORDER));
+        return permissions;
+    }
+
+    private Map<String, List<String>> roleDefaultsPayload() {
+        Map<String, List<String>> payload = new HashMap<>();
+        for (UserRole role : UserRole.values()) {
+            List<String> defaults = role.defaultPermissions().stream()
+                    .filter(PanelPermission::assignable)
+                    .map(Enum::name)
+                    .sorted()
+                    .toList();
+            payload.put(role.name(), defaults);
+        }
+        return payload;
+    }
+
+    private Set<String> installedExtensionIds() {
+        Set<String> ids = new HashSet<>();
+        for (Map<String, Object> installed : extensionManager.installedExtensions()) {
+            String id = normalizeExtensionKey(String.valueOf(installed.getOrDefault("id", "")));
+            if (!id.isBlank()) {
+                ids.add(id);
+            }
+        }
+        return ids;
+    }
+
+    private Set<PanelPermission> parsePermissionNames(List<String> rawPermissions) {
+        Set<PanelPermission> parsed = EnumSet.noneOf(PanelPermission.class);
+        if (rawPermissions == null) {
+            return parsed;
+        }
+
+        for (String raw : rawPermissions) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            try {
+                parsed.add(PanelPermission.valueOf(raw.trim().toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore unknown permission ids from stale clients.
+            }
+        }
+        return parsed;
     }
 
     private void setSessionCookie(Response response, String token, int maxAgeSeconds) {
@@ -1828,9 +1957,13 @@ public final class WebPanelServer {
     }
 
     private String handleExtensionNavigation(Request request, Response response) {
-        requireUser(request, PanelPermission.VIEW_DASHBOARD);
+        PanelUser user = requireUser(request, PanelPermission.ACCESS_PANEL);
 
         List<Map<String, Object>> tabs = extensionManager.navigationTabs().stream()
+                .filter(tab -> {
+                    PanelPermission required = permissionForPath(tab.path());
+                    return required == null || user.hasPermission(required);
+                })
                 .map(tab -> Map.<String, Object>of(
                         "category", tab.category(),
                         "label", tab.label(),
@@ -1841,8 +1974,31 @@ public final class WebPanelServer {
         return json(response, 200, Map.of("tabs", tabs));
     }
 
+    private PanelPermission permissionForPath(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+
+        return switch (path.trim()) {
+            case "/dashboard/overview" -> PanelPermission.VIEW_OVERVIEW;
+            case "/console", "/dashboard/console" -> PanelPermission.VIEW_CONSOLE;
+            case "/dashboard/resources" -> PanelPermission.VIEW_RESOURCES;
+            case "/dashboard/players" -> PanelPermission.VIEW_PLAYERS;
+            case "/dashboard/bans" -> PanelPermission.VIEW_BANS;
+            case "/dashboard/plugins" -> PanelPermission.VIEW_PLUGINS;
+            case "/dashboard/users" -> PanelPermission.VIEW_USERS;
+            case "/dashboard/discord-webhook" -> PanelPermission.VIEW_DISCORD_WEBHOOK;
+            case "/dashboard/themes" -> PanelPermission.VIEW_THEMES;
+            case "/dashboard/extensions" -> PanelPermission.VIEW_EXTENSIONS;
+            case "/dashboard/world-backups" -> PanelPermission.VIEW_BACKUPS;
+            case "/dashboard/reports" -> PanelPermission.VIEW_REPORTS;
+            case "/dashboard/tickets" -> PanelPermission.VIEW_TICKETS;
+            default -> null;
+        };
+    }
+
     private String handleExtensionStatus(Request request, Response response) {
-        requireUser(request, PanelPermission.MANAGE_USERS);
+        requireUser(request, PanelPermission.VIEW_EXTENSIONS);
 
         String channel = normalizeReleaseChannel(request.queryParams("channel"));
         List<Map<String, Object>> installed = extensionManager.installedExtensions();
@@ -1954,7 +2110,7 @@ public final class WebPanelServer {
     }
 
     private String handleExtensionInstall(Request request, Response response) {
-        PanelUser userSession = requireUser(request, PanelPermission.MANAGE_USERS);
+        PanelUser userSession = requireUser(request, PanelPermission.MANAGE_EXTENSIONS);
 
         JsonObject payload;
         try {
@@ -2087,7 +2243,7 @@ public final class WebPanelServer {
     }
 
     private String handleExtensionReload(Request request, Response response) {
-        PanelUser user = requireUser(request, PanelPermission.MANAGE_USERS);
+        PanelUser user = requireUser(request, PanelPermission.MANAGE_EXTENSIONS);
 
         ExtensionManager.ReloadResult reloadResult;
         try {
@@ -2547,10 +2703,13 @@ public final class WebPanelServer {
     private record BootstrapPayload(String token, String username, String password) {
     }
 
-    private record CreateUserPayload(String username, String password, String role) {
+    private record CreateUserPayload(String username, String password, String role, List<String> permissions) {
     }
 
     private record UpdateRolePayload(String role) {
+    }
+
+    private record UpdatePermissionsPayload(List<String> permissions) {
     }
 
     private record ConsolePayload(String message) {

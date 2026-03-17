@@ -88,10 +88,59 @@
             }
 
             enforceServerCategoryOrder(sideNav);
+            await applySidebarPermissionVisibility(sideNav);
         } catch (ignored) {
             // Ignore extension tab loading issues on login/setup pages.
             enforceServerCategoryOrder(sideNav);
+            await applySidebarPermissionVisibility(sideNav);
         }
+    }
+
+    async function applySidebarPermissionVisibility(sideNav) {
+        let me;
+        try {
+            const response = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
+            if (!response.ok) {
+                return;
+            }
+            const payload = await response.json();
+            me = payload && payload.user ? payload.user : null;
+        } catch (ignored) {
+            return;
+        }
+
+        if (!me || !Array.isArray(me.permissions)) {
+            return;
+        }
+
+        const permissionSet = new Set(me.permissions);
+        const linkPermissions = new Map([
+            ['/dashboard/overview', 'VIEW_OVERVIEW'],
+            ['/console', 'VIEW_CONSOLE'],
+            ['/dashboard/console', 'VIEW_CONSOLE'],
+            ['/dashboard/resources', 'VIEW_RESOURCES'],
+            ['/dashboard/players', 'VIEW_PLAYERS'],
+            ['/dashboard/bans', 'VIEW_BANS'],
+            ['/dashboard/plugins', 'VIEW_PLUGINS'],
+            ['/dashboard/users', 'VIEW_USERS'],
+            ['/dashboard/discord-webhook', 'VIEW_DISCORD_WEBHOOK'],
+            ['/dashboard/themes', 'VIEW_THEMES'],
+            ['/dashboard/extensions', 'VIEW_EXTENSIONS'],
+            ['/dashboard/world-backups', 'VIEW_BACKUPS'],
+            ['/dashboard/reports', 'VIEW_REPORTS'],
+            ['/dashboard/tickets', 'VIEW_TICKETS']
+        ]);
+
+        sideNav.querySelectorAll('a.side-link').forEach(link => {
+            const href = link.getAttribute('href') || '';
+            const required = linkPermissions.get(href);
+            if (!required) {
+                return;
+            }
+
+            const allowed = permissionSet.has(required);
+            link.style.display = allowed ? '' : 'none';
+        });
     }
 
     function enforceServerCategoryOrder(sideNav) {

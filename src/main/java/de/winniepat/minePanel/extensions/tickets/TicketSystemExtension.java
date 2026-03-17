@@ -63,13 +63,13 @@ public final class TicketSystemExtension implements MinePanelExtension {
 
     @Override
     public void registerWebRoutes(ExtensionWebRegistry webRegistry) {
-        webRegistry.get("/api/extensions/tickets", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.get("/api/extensions/tickets", PanelPermission.VIEW_TICKETS, (request, response, user) -> {
             String status = request.queryParams("status");
             List<Map<String, Object>> tickets = ticketRepository.listTickets(status).stream().map(this::toPayload).toList();
             return webRegistry.json(response, 200, Map.of("tickets", tickets));
         });
 
-        webRegistry.post("/api/extensions/tickets/:id/close", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/tickets/:id/close", PanelPermission.MANAGE_TICKETS, (request, response, user) -> {
             long ticketId = parseTicketId(request.params("id"));
             if (ticketId <= 0) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_ticket_id"));
@@ -84,7 +84,7 @@ public final class TicketSystemExtension implements MinePanelExtension {
             return webRegistry.json(response, 200, Map.of("ok", true));
         });
 
-        webRegistry.post("/api/extensions/tickets/:id/reopen", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/tickets/:id/reopen", PanelPermission.MANAGE_TICKETS, (request, response, user) -> {
             long ticketId = parseTicketId(request.params("id"));
             if (ticketId <= 0) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_ticket_id"));

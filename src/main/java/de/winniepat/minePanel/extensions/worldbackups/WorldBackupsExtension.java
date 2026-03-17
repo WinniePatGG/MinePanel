@@ -36,7 +36,7 @@ public final class WorldBackupsExtension implements MinePanelExtension {
 
     @Override
     public void registerWebRoutes(ExtensionWebRegistry webRegistry) {
-        webRegistry.get("/api/extensions/world-backups", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.get("/api/extensions/world-backups", PanelPermission.VIEW_BACKUPS, (request, response, user) -> {
             String world = request.queryParams("world");
             if (world != null && !world.isBlank()) {
                 List<Map<String, Object>> backups = backupService.listBackups(world).stream().map(this::toPayload).toList();
@@ -53,7 +53,7 @@ public final class WorldBackupsExtension implements MinePanelExtension {
             return webRegistry.json(response, 200, payload);
         });
 
-        webRegistry.post("/api/extensions/world-backups/create", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/world-backups/create", PanelPermission.MANAGE_BACKUPS, (request, response, user) -> {
             CreateBackupPayload payload = gson.fromJson(request.body(), CreateBackupPayload.class);
             if (payload == null || isBlank(payload.world()) || isBlank(payload.name())) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_payload"));
@@ -86,7 +86,7 @@ public final class WorldBackupsExtension implements MinePanelExtension {
             return webRegistry.json(response, 200, Map.of("ok", true, "backup", toPayload(result.backup())));
         });
 
-        webRegistry.post("/api/extensions/world-backups/delete", PanelPermission.MANAGE_PLAYERS, (request, response, user) -> {
+        webRegistry.post("/api/extensions/world-backups/delete", PanelPermission.MANAGE_BACKUPS, (request, response, user) -> {
             DeleteBackupPayload payload = gson.fromJson(request.body(), DeleteBackupPayload.class);
             if (payload == null || isBlank(payload.world()) || isBlank(payload.fileName())) {
                 return webRegistry.json(response, 400, Map.of("error", "invalid_payload"));

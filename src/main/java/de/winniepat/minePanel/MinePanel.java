@@ -68,6 +68,11 @@ public final class MinePanel extends JavaPlugin {
         this.database.initialize();
 
         UserRepository userRepository = new UserRepository(database);
+        int normalizedOwners = userRepository.demoteExtraOwnersToAdmin();
+        if (normalizedOwners > 0) {
+            getLogger().warning("Detected multiple owner accounts. Demoted " + normalizedOwners + " extra owner account(s) to ADMIN.");
+        }
+
         this.logRepository = new LogRepository(database);
         KnownPlayerRepository knownPlayerRepository = new KnownPlayerRepository(database);
         this.playerActivityRepository = new PlayerActivityRepository(database);

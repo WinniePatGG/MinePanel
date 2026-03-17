@@ -40,6 +40,7 @@ tasks.named('shadowJar') {
     exclude('de/winniepat/minePanel/extensions/playerstats/**')
     exclude('de/winniepat/minePanel/extensions/tickets/**')
     exclude('de/winniepat/minePanel/extensions/worldbackups/**')
+    exclude('de/winniepat/minePanel/extensions/airstrike/**')
 }
 
 def extensionOutputDir = layout.buildDirectory.dir('libs/extensions')
@@ -158,10 +159,29 @@ tasks.register('worldBackupsExtensionJar', Jar) {
     }
 }
 
+tasks.register('airstrikeExtensionJar', Jar) {
+    group = 'build'
+    description = 'Builds the MinePanel airstrike extension jar.'
+    dependsOn(tasks.named('classes'))
+
+    archiveBaseName.set('MinePanel-Extension-Airstrike')
+    archiveVersion.set(project.version.toString())
+    destinationDirectory.set(extensionOutputDir)
+
+    from(sourceSets.main.output) {
+        include('de/winniepat/minePanel/extensions/airstrike/**')
+    }
+
+    from(resources.text.fromString('de.winniepat.minePanel.extensions.airstrike.AirstrikeExtension\n')) {
+        into('META-INF/services')
+        rename { 'de.winniepat.minePanel.extensions.MinePanelExtension' }
+    }
+}
+
 tasks.register('installExtensionsToRunServer', Copy) {
     group = 'build'
     description = 'Copies built extension jars into run/plugins/MinePanel/extensions for local testing.'
-    dependsOn(tasks.named('reportsExtensionJar'), tasks.named('playerManagementExtensionJar'), tasks.named('luckPermsExtensionJar'), tasks.named('playerStatsExtensionJar'), tasks.named('ticketsExtensionJar'), tasks.named('worldBackupsExtensionJar'))
+    dependsOn(tasks.named('reportsExtensionJar'), tasks.named('playerManagementExtensionJar'), tasks.named('luckPermsExtensionJar'), tasks.named('playerStatsExtensionJar'), tasks.named('ticketsExtensionJar'), tasks.named('worldBackupsExtensionJar'), tasks.named('airstrikeExtensionJar'))
 
     from(extensionOutputDir)
     include('*.jar')
@@ -176,6 +196,7 @@ tasks.named('assemble') {
     dependsOn(tasks.named('playerStatsExtensionJar'))
     dependsOn(tasks.named('ticketsExtensionJar'))
     dependsOn(tasks.named('worldBackupsExtensionJar'))
+    dependsOn(tasks.named('airstrikeExtensionJar'))
 }
 
 tasks {

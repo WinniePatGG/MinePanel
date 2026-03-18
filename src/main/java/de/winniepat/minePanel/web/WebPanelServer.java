@@ -234,6 +234,11 @@ public final class WebPanelServer {
             return webAssetService.readText("dashboard-world-backups.html");
         });
 
+        get("/dashboard/maintenance", (request, response) -> {
+            response.type("text/html");
+            return webAssetService.readText("dashboard-maintenance.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return webAssetService.readText("panel.css");
@@ -2370,6 +2375,7 @@ public final class WebPanelServer {
             case "/dashboard/world-backups" -> PanelPermission.VIEW_BACKUPS;
             case "/dashboard/reports" -> PanelPermission.VIEW_REPORTS;
             case "/dashboard/tickets" -> PanelPermission.VIEW_TICKETS;
+            case "/dashboard/maintenance" -> PanelPermission.VIEW_MAINTENANCE;
             default -> null;
         };
     }

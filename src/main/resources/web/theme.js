@@ -129,6 +129,7 @@
             ['/dashboard/extensions', 'VIEW_EXTENSIONS'],
             ['/dashboard/account', 'ACCESS_PANEL'],
             ['/dashboard/world-backups', 'VIEW_BACKUPS'],
+            ['/dashboard/maintenance', 'VIEW_MAINTENANCE'],
             ['/dashboard/reports', 'VIEW_REPORTS'],
             ['/dashboard/tickets', 'VIEW_TICKETS']
         ]);
@@ -156,6 +157,7 @@
             '/dashboard/console',
             '/dashboard/resources',
             '/dashboard/world-backups',
+            '/dashboard/maintenance',
             '/dashboard/players',
             '/dashboard/bans',
             '/dashboard/plugins',

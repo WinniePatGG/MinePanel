@@ -12,6 +12,7 @@ import java.util.List;
 public final class WebAssetService {
 
     private static final List<String> BUNDLED_WEB_FILES = List.of(
+            "dashboard-account.html",
             "dashboard-bans.html",
             "dashboard-console.html",
             "dashboard-discord-webhook.html",

@@ -43,6 +43,29 @@ public final class Database {
                     + "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
                     + ")");
 
+            statement.execute("CREATE TABLE IF NOT EXISTS oauth_accounts ("
+                    + "user_id INTEGER NOT NULL,"
+                    + "provider TEXT NOT NULL,"
+                    + "provider_user_id TEXT NOT NULL,"
+                    + "display_name TEXT NOT NULL DEFAULT '',"
+                    + "email TEXT NOT NULL DEFAULT '',"
+                    + "avatar_url TEXT NOT NULL DEFAULT '',"
+                    + "linked_at INTEGER NOT NULL,"
+                    + "updated_at INTEGER NOT NULL,"
+                    + "PRIMARY KEY(user_id, provider),"
+                    + "UNIQUE(provider, provider_user_id),"
+                    + "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+                    + ")");
+
+            statement.execute("CREATE TABLE IF NOT EXISTS oauth_states ("
+                    + "state TEXT PRIMARY KEY,"
+                    + "provider TEXT NOT NULL,"
+                    + "mode TEXT NOT NULL,"
+                    + "user_id INTEGER,"
+                    + "created_at INTEGER NOT NULL,"
+                    + "expires_at INTEGER NOT NULL"
+                    + ")");
+
             statement.execute("CREATE TABLE IF NOT EXISTS panel_logs ("
                     + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     + "kind TEXT NOT NULL,"

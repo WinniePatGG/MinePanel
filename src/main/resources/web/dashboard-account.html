@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Account</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+    <style>
+        .oauth-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .oauth-provider {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface);
+            padding: 14px;
+        }
+
+        .oauth-provider h3 {
+            margin: 0 0 6px;
+        }
+
+        .oauth-meta {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+
+        .oauth-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .oauth-status {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link active" href="/dashboard/account">Account</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Account Settings</h1>
+        <section class="card spaced-top">
+            <h2>Linked OAuth Accounts</h2>
+            <p>Link Google or Discord for one-click login on the login page.</p>
+            <p id="status" class="action-status"></p>
+            <div id="providers" class="oauth-grid"></div>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const expanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expanded);
+                toggle.classList.toggle('expanded', expanded);
+                savedState[category] = expanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    function setStatus(message, isError) {
+        const status = document.getElementById('status');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function providerCard(provider) {
+        const linked = !!provider.linked;
+        const enabled = !!provider.enabled;
+        const configured = !!provider.configured;
+        const displayName = (provider.displayName || '').trim();
+        const email = (provider.email || '').trim();
+        const subtitle = linked
+            ? [displayName || 'Linked account', email].filter(Boolean).join(' - ')
+            : 'Not linked';
+
+        return `
+            <article class="oauth-provider">
+                <h3>${provider.label}</h3>
+                <div class="oauth-meta">${subtitle}</div>
+                <div class="oauth-actions">
+                    <button data-link="${provider.provider}" ${!enabled || !configured ? 'disabled' : ''}>Link</button>
+                    <button class="secondary" data-unlink="${provider.provider}" ${!linked ? 'disabled' : ''}>Unlink</button>
+                </div>
+                <div class="oauth-status">${!enabled ? 'Disabled in config' : (!configured ? 'Missing OAuth credentials' : (linked ? 'Linked' : 'Ready to link'))}</div>
+            </article>
+        `;
+    }
+
+    async function loadProviders() {
+        const data = await api('/api/account/links');
+        const container = document.getElementById('providers');
+        const providers = Array.isArray(data.providers) ? data.providers : [];
+
+        container.innerHTML = providers.map(providerCard).join('');
+
+        container.querySelectorAll('button[data-link]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const provider = button.getAttribute('data-link');
+                try {
+                    const start = await api(`/api/oauth/${provider}/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: 'link' })
+                    });
+                    window.location.href = start.authUrl;
+                } catch (error) {
+                    setStatus(`Could not start ${provider} linking: ${error.message}`, true);
+                }
+            });
+        });
+
+        container.querySelectorAll('button[data-unlink]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const provider = button.getAttribute('data-unlink');
+                if (!confirm(`Unlink ${provider} from your panel account?`)) {
+                    return;
+                }
+                try {
+                    await api(`/api/oauth/${provider}/unlink`, { method: 'POST' });
+                    setStatus(`${provider} unlinked.`, false);
+                    await loadProviders();
+                } catch (error) {
+                    setStatus(`Could not unlink ${provider}: ${error.message}`, true);
+                }
+            });
+        });
+    }
+
+    function showOAuthQueryState() {
+        const url = new URL(window.location.href);
+        const oauth = (url.searchParams.get('oauth') || '').trim();
+        if (!oauth) {
+            return;
+        }
+
+        if (oauth === 'linked') {
+            setStatus('OAuth account linked successfully.', false);
+        } else {
+            setStatus(`OAuth status: ${oauth}`, true);
+        }
+
+        url.searchParams.delete('oauth');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? `?${url.searchParams.toString()}` : ''));
+    }
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        try {
+            await api('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        } catch (error) {
+            setStatus(`Logout failed: ${error.message}`, true);
+        }
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            showOAuthQueryState();
+            await loadProviders();
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

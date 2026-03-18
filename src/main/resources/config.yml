@@ -7,6 +7,18 @@ security:
   bootstrapTokenLength: 32
 
 integrations:
+  oauth:
+    stateTtlMinutes: 10
+    google:
+      enabled: false
+      clientId: ""
+      clientSecret: ""
+      redirectUri: "http://127.0.0.1:8080/api/oauth/google/callback"
+    discord:
+      enabled: false
+      clientId: ""
+      clientSecret: ""
+      redirectUri: "http://127.0.0.1:8080/api/oauth/discord/callback"
   github:
     token: ""
     releaseCacheSeconds: 300

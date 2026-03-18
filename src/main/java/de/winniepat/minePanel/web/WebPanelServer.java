@@ -21,6 +21,7 @@ import java.net.*;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -47,6 +48,9 @@ public final class WebPanelServer {
     private static final List<String> PAPER_PLUGIN_LOADERS = List.of("paper", "spigot", "bukkit", "purpur", "folia");
     private static final long OVERVIEW_WINDOW_MILLIS = 60L * 60L * 1000L;
     private static final long OVERVIEW_SAMPLE_INTERVAL_TICKS = 20L * 5L;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String OAUTH_MODE_LOGIN = "login";
+    private static final String OAUTH_MODE_LINK = "link";
     private final long serverStartedAtMillis = System.currentTimeMillis();
 
     private final MinePanel plugin;
@@ -62,6 +66,8 @@ public final class WebPanelServer {
     private final PanelLogger panelLogger;
     private final ServerLogService serverLogService;
     private final BootstrapService bootstrapService;
+    private final OAuthAccountRepository oAuthAccountRepository;
+    private final OAuthStateRepository oAuthStateRepository;
     private final ExtensionManager extensionManager;
     private final WebAssetService webAssetService;
     private final Gson gson = new Gson();
@@ -87,6 +93,8 @@ public final class WebPanelServer {
             ServerLogService serverLogService,
             BootstrapService bootstrapService,
             JoinLeaveEventRepository joinLeaveEventRepository,
+            OAuthAccountRepository oAuthAccountRepository,
+            OAuthStateRepository oAuthStateRepository,
             ExtensionManager extensionManager,
             WebAssetService webAssetService
     ) {
@@ -103,6 +111,8 @@ public final class WebPanelServer {
         this.panelLogger = panelLogger;
         this.serverLogService = serverLogService;
         this.bootstrapService = bootstrapService;
+        this.oAuthAccountRepository = oAuthAccountRepository;
+        this.oAuthStateRepository = oAuthStateRepository;
         this.extensionManager = extensionManager;
         this.webAssetService = webAssetService;
     }
@@ -204,6 +214,11 @@ public final class WebPanelServer {
             return webAssetService.readText("dashboard-extensions.html");
         });
 
+        get("/dashboard/account", (request, response) -> {
+            response.type("text/html");
+            return webAssetService.readText("dashboard-account.html");
+        });
+
         get("/dashboard/reports", (request, response) -> {
             response.type("text/html");
             return webAssetService.readText("dashboard-reports.html");
@@ -239,6 +254,11 @@ public final class WebPanelServer {
             post("/login", (request, response) -> handleLogin(request, response));
             post("/logout", (request, response) -> handleLogout(request, response));
             get("/me", (request, response) -> handleMe(request, response));
+            get("/oauth/providers", (request, response) -> handleOAuthProviders(response));
+            post("/oauth/:provider/start", (request, response) -> handleOAuthStart(request, response));
+            get("/oauth/:provider/callback", (request, response) -> handleOAuthCallback(request, response));
+            post("/oauth/:provider/unlink", (request, response) -> handleOAuthUnlink(request, response));
+            get("/account/links", (request, response) -> handleAccountLinks(request, response));
             get("/extensions/navigation", (request, response) -> handleExtensionNavigation(request, response));
             get("/extensions/status", (request, response) -> handleExtensionStatus(request, response));
             post("/extensions/install", (request, response) -> handleExtensionInstall(request, response));
@@ -501,6 +521,165 @@ public final class WebPanelServer {
     private String handleMe(Request request, Response response) {
         PanelUser user = requireUser(request, PanelPermission.ACCESS_PANEL);
         return json(response, 200, Map.of("user", toPublicUser(user)));
+    }
+
+    private String handleOAuthProviders(Response response) {
+        List<Map<String, Object>> providers = new ArrayList<>();
+        providers.add(oauthProviderPayload("google", "Google"));
+        providers.add(oauthProviderPayload("discord", "Discord"));
+        return json(response, 200, Map.of("providers", providers));
+    }
+
+    private String handleOAuthStart(Request request, Response response) {
+        if (bootstrapService.needsBootstrap()) {
+            return json(response, 400, Map.of("error", "bootstrap_required"));
+        }
+
+        String provider = normalizeOAuthProvider(request.params("provider"));
+        WebPanelConfig.OAuthProviderConfig providerConfig = config.oauthProvider(provider);
+        if (!providerConfig.configured()) {
+            return json(response, 400, Map.of("error", "oauth_provider_not_configured"));
+        }
+
+        OAuthStartPayload payload;
+        try {
+            String body = request.body();
+            payload = (body == null || body.isBlank()) ? null : gson.fromJson(body, OAuthStartPayload.class);
+        } catch (JsonSyntaxException exception) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+        String mode = payload == null ? OAUTH_MODE_LOGIN : normalizeOAuthMode(payload.mode());
+        if (!OAUTH_MODE_LOGIN.equals(mode) && !OAUTH_MODE_LINK.equals(mode)) {
+            return json(response, 400, Map.of("error", "invalid_oauth_mode"));
+        }
+
+        Long userId = null;
+        if (OAUTH_MODE_LINK.equals(mode)) {
+            userId = requireUser(request, PanelPermission.ACCESS_PANEL).id();
+        }
+
+        String state = generateToken(24);
+        long expiresAt = Instant.now().plus(config.oauthStateTtlMinutes(), ChronoUnit.MINUTES).toEpochMilli();
+        oAuthStateRepository.createState(state, provider, mode, userId, expiresAt);
+
+        String authUrl = buildOAuthAuthorizationUrl(provider, providerConfig, state);
+        return json(response, 200, Map.of("ok", true, "provider", provider, "mode", mode, "authUrl", authUrl));
+    }
+
+    private Object handleOAuthCallback(Request request, Response response) {
+        if (bootstrapService.needsBootstrap()) {
+            response.redirect("/setup?oauth=bootstrap_required");
+            return "";
+        }
+
+        String provider = normalizeOAuthProvider(request.params("provider"));
+        WebPanelConfig.OAuthProviderConfig providerConfig = config.oauthProvider(provider);
+        if (!providerConfig.configured()) {
+            response.redirect("/?oauth=provider_not_configured");
+            return "";
+        }
+
+        String callbackError = request.queryParams("error");
+        if (!isBlank(callbackError)) {
+            response.redirect("/?oauth=" + urlEncode("provider_error:" + callbackError));
+            return "";
+        }
+
+        String code = request.queryParams("code");
+        String state = request.queryParams("state");
+        if (isBlank(code) || isBlank(state)) {
+            response.redirect("/?oauth=invalid_callback");
+            return "";
+        }
+
+        Optional<OAuthStateRepository.OAuthState> oauthState = oAuthStateRepository.consumeState(state, provider, OAUTH_MODE_LOGIN);
+        String mode = OAUTH_MODE_LOGIN;
+        if (oauthState.isEmpty()) {
+            oauthState = oAuthStateRepository.consumeState(state, provider, OAUTH_MODE_LINK);
+            mode = OAUTH_MODE_LINK;
+        }
+        if (oauthState.isEmpty()) {
+            response.redirect("/?oauth=invalid_state");
+            return "";
+        }
+
+        String modeFailureRedirect = OAUTH_MODE_LINK.equals(mode) ? "/dashboard/account" : "/";
+
+        OAuthUserProfile profile;
+        try {
+            String accessToken = exchangeOAuthCodeForAccessToken(provider, providerConfig, code);
+            profile = fetchOAuthUserProfile(provider, accessToken);
+        } catch (Exception exception) {
+            plugin.getLogger().warning("OAuth callback failed for provider=" + provider + ": " + exception.getMessage());
+            response.redirect(modeFailureRedirect + "?oauth=exchange_failed");
+            return "";
+        }
+
+        if (OAUTH_MODE_LINK.equals(mode)) {
+            Long userId = oauthState.get().userId();
+            if (userId == null) {
+                response.redirect("/dashboard/account?oauth=invalid_state");
+                return "";
+            }
+
+            Optional<Long> existingOwner = oAuthAccountRepository.findUserIdByProviderSubject(provider, profile.providerUserId());
+            if (existingOwner.isPresent() && !Objects.equals(existingOwner.get(), userId)) {
+                response.redirect("/dashboard/account?oauth=already_linked");
+                return "";
+            }
+
+            oAuthAccountRepository.upsertLink(userId, provider, profile.providerUserId(), profile.displayName(), profile.email(), profile.avatarUrl());
+            panelLogger.log("AUTH", "OAUTH", "Linked " + provider + " account for panel user id=" + userId);
+            response.redirect("/dashboard/account?oauth=linked");
+            return "";
+        }
+
+        Optional<Long> userId = oAuthAccountRepository.findUserIdByProviderSubject(provider, profile.providerUserId());
+        if (userId.isEmpty()) {
+            response.redirect("/?oauth=not_linked");
+            return "";
+        }
+
+        Optional<PanelUser> user = userRepository.findById(userId.get());
+        if (user.isEmpty()) {
+            response.redirect("/?oauth=user_not_found");
+            return "";
+        }
+
+        String sessionToken = sessionService.createSession(user.get().id());
+        setSessionCookie(response, sessionToken, config.sessionTtlMinutes() * 60);
+        panelLogger.log("AUTH", user.get().username(), "OAuth login successful via " + provider);
+        response.redirect("/dashboard/overview");
+        return "";
+    }
+
+    private String handleOAuthUnlink(Request request, Response response) {
+        PanelUser user = requireUser(request, PanelPermission.ACCESS_PANEL);
+        String provider = normalizeOAuthProvider(request.params("provider"));
+        if (provider.isBlank()) {
+            return json(response, 400, Map.of("error", "invalid_oauth_provider"));
+        }
+
+        boolean removed = oAuthAccountRepository.unlink(user.id(), provider);
+        if (!removed) {
+            return json(response, 404, Map.of("error", "oauth_link_not_found"));
+        }
+
+        panelLogger.log("AUDIT", user.username(), "Unlinked OAuth provider " + provider);
+        return json(response, 200, Map.of("ok", true));
+    }
+
+    private String handleAccountLinks(Request request, Response response) {
+        PanelUser user = requireUser(request, PanelPermission.ACCESS_PANEL);
+        Map<String, OAuthAccountRepository.OAuthAccountLink> byProvider = new HashMap<>();
+        for (OAuthAccountRepository.OAuthAccountLink link : oAuthAccountRepository.listByUserId(user.id())) {
+            byProvider.put(normalizeOAuthProvider(link.provider()), link);
+        }
+
+        List<Map<String, Object>> providers = new ArrayList<>();
+        providers.add(accountProviderPayload("google", "Google", byProvider.get("google")));
+        providers.add(accountProviderPayload("discord", "Discord", byProvider.get("discord")));
+        return json(response, 200, Map.of("providers", providers));
     }
 
     private String handleListUsers(Request request, Response response) {
@@ -1798,6 +1977,204 @@ public final class WebPanelServer {
         return trimmed.substring(0, maxLength);
     }
 
+    private Map<String, Object> oauthProviderPayload(String provider, String label) {
+        WebPanelConfig.OAuthProviderConfig providerConfig = config.oauthProvider(provider);
+        return Map.of(
+                "provider", provider,
+                "label", label,
+                "enabled", providerConfig.enabled(),
+                "configured", providerConfig.configured()
+        );
+    }
+
+    private Map<String, Object> accountProviderPayload(String provider, String label, OAuthAccountRepository.OAuthAccountLink link) {
+        WebPanelConfig.OAuthProviderConfig providerConfig = config.oauthProvider(provider);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("provider", provider);
+        payload.put("label", label);
+        payload.put("enabled", providerConfig.enabled());
+        payload.put("configured", providerConfig.configured());
+
+        if (link == null) {
+            payload.put("linked", false);
+            return payload;
+        }
+
+        payload.put("linked", true);
+        payload.put("displayName", link.displayName());
+        payload.put("email", link.email());
+        payload.put("avatarUrl", link.avatarUrl());
+        payload.put("linkedAt", link.linkedAt());
+        payload.put("updatedAt", link.updatedAt());
+        return payload;
+    }
+
+    private String normalizeOAuthProvider(String rawProvider) {
+        if (rawProvider == null) {
+            return "";
+        }
+
+        String normalized = rawProvider.trim().toLowerCase(Locale.ROOT);
+        if ("google".equals(normalized) || "discord".equals(normalized)) {
+            return normalized;
+        }
+        return "";
+    }
+
+    private String normalizeOAuthMode(String rawMode) {
+        if (rawMode == null) {
+            return OAUTH_MODE_LOGIN;
+        }
+
+        String normalized = rawMode.trim().toLowerCase(Locale.ROOT);
+        if (OAUTH_MODE_LINK.equals(normalized)) {
+            return OAUTH_MODE_LINK;
+        }
+        return OAUTH_MODE_LOGIN;
+    }
+
+    private String buildOAuthAuthorizationUrl(String provider, WebPanelConfig.OAuthProviderConfig providerConfig, String state) {
+        String authorizationEndpoint;
+        String scope;
+        if ("google".equals(provider)) {
+            authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
+            scope = "openid profile email";
+        } else if ("discord".equals(provider)) {
+            authorizationEndpoint = "https://discord.com/api/oauth2/authorize";
+            scope = "identify email";
+        } else {
+            throw new IllegalArgumentException("Unsupported OAuth provider: " + provider);
+        }
+
+        return authorizationEndpoint
+                + "?client_id=" + urlEncode(providerConfig.clientId())
+                + "&redirect_uri=" + urlEncode(providerConfig.redirectUri())
+                + "&response_type=code"
+                + "&scope=" + urlEncode(scope)
+                + "&state=" + urlEncode(state)
+                + "&prompt=" + urlEncode("select_account");
+    }
+
+    private String exchangeOAuthCodeForAccessToken(String provider, WebPanelConfig.OAuthProviderConfig providerConfig, String code)
+            throws IOException, InterruptedException {
+        String endpoint;
+        if ("google".equals(provider)) {
+            endpoint = "https://oauth2.googleapis.com/token";
+        } else if ("discord".equals(provider)) {
+            endpoint = "https://discord.com/api/oauth2/token";
+        } else {
+            throw new IllegalArgumentException("Unsupported OAuth provider: " + provider);
+        }
+
+        String body = "grant_type=authorization_code"
+                + "&code=" + urlEncode(code)
+                + "&client_id=" + urlEncode(providerConfig.clientId())
+                + "&client_secret=" + urlEncode(providerConfig.clientSecret())
+                + "&redirect_uri=" + urlEncode(providerConfig.redirectUri());
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OAuth token exchange failed with status " + response.statusCode());
+        }
+
+        JsonObject payload = JsonParser.parseString(response.body()).getAsJsonObject();
+        String accessToken = payload.has("access_token") ? payload.get("access_token").getAsString() : "";
+        if (accessToken.isBlank()) {
+            throw new IllegalStateException("OAuth provider did not return access_token");
+        }
+
+        return accessToken;
+    }
+
+    private OAuthUserProfile fetchOAuthUserProfile(String provider, String accessToken)
+            throws IOException, InterruptedException {
+        String endpoint;
+        if ("google".equals(provider)) {
+            endpoint = "https://www.googleapis.com/oauth2/v2/userinfo";
+        } else if ("discord".equals(provider)) {
+            endpoint = "https://discord.com/api/users/@me";
+        } else {
+            throw new IllegalArgumentException("Unsupported OAuth provider: " + provider);
+        }
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .header("Authorization", "Bearer " + accessToken)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OAuth userinfo failed with status " + response.statusCode());
+        }
+
+        JsonObject profile = JsonParser.parseString(response.body()).getAsJsonObject();
+        if ("google".equals(provider)) {
+            String providerUserId = asString(profile, "id");
+            if (providerUserId.isBlank()) {
+                throw new IllegalStateException("Google user info missing id");
+            }
+            return new OAuthUserProfile(
+                    provider,
+                    providerUserId,
+                    asString(profile, "name"),
+                    asString(profile, "email"),
+                    asString(profile, "picture")
+            );
+        }
+
+        String providerUserId = asString(profile, "id");
+        if (providerUserId.isBlank()) {
+            throw new IllegalStateException("Discord user info missing id");
+        }
+
+        String globalName = asString(profile, "global_name");
+        String username = asString(profile, "username");
+        String discriminator = asString(profile, "discriminator");
+        String displayName = !globalName.isBlank() ? globalName : username;
+        if (displayName.isBlank()) {
+            displayName = providerUserId;
+        }
+        if (!username.isBlank() && !"0".equals(discriminator) && !discriminator.isBlank()) {
+            displayName = username + "#" + discriminator;
+        }
+
+        String avatar = asString(profile, "avatar");
+        String avatarUrl = "";
+        if (!avatar.isBlank()) {
+            avatarUrl = "https://cdn.discordapp.com/avatars/" + providerUserId + "/" + avatar + ".png?size=128";
+        }
+
+        return new OAuthUserProfile(provider, providerUserId, displayName, asString(profile, "email"), avatarUrl);
+    }
+
+    private String asString(JsonObject object, String key) {
+        if (object == null || key == null || !object.has(key) || object.get(key).isJsonNull()) {
+            return "";
+        }
+        try {
+            return object.get(key).getAsString();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private String generateToken(int byteCount) {
+        byte[] bytes = new byte[Math.max(16, byteCount)];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
     private String sanitizeUsername(String rawUsername) {
         if (rawUsername == null || rawUsername.isBlank()) {
             return null;
@@ -2703,6 +3080,9 @@ public final class WebPanelServer {
     private record BootstrapPayload(String token, String username, String password) {
     }
 
+    private record OAuthStartPayload(String mode) {
+    }
+
     private record CreateUserPayload(String username, String password, String role, List<String> permissions) {
     }
 
@@ -2750,6 +3130,9 @@ public final class WebPanelServer {
     }
 
     private record MarketplaceDownload(String downloadUrl, String fileName) {
+    }
+
+    private record OAuthUserProfile(String provider, String providerUserId, String displayName, String email, String avatarUrl) {
     }
 
     private record PlayerActionResult(boolean success, String username, String error) {

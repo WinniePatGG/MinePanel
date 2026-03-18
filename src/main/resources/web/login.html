@@ -13,6 +13,7 @@
         <h1>MinePanel</h1>
         <p>Sign in to access logs and admin tools.</p>
         <div id="error" class="error"></div>
+        <div id="oauthActions" class="stack"></div>
         <div class="label">Username</div>
         <input id="username" placeholder="Username" autocomplete="username">
         <div class="label">Password</div>
@@ -22,6 +23,72 @@
 </main>
 <script>
     const error = document.getElementById('error');
+
+    function showOAuthQueryState() {
+        const url = new URL(window.location.href);
+        const oauth = (url.searchParams.get('oauth') || '').trim();
+        if (!oauth) {
+            return;
+        }
+
+        const friendly = {
+            not_linked: 'This OAuth account is not linked to a panel user.',
+            invalid_state: 'OAuth session expired. Please try again.',
+            exchange_failed: 'OAuth login failed. Please try again.',
+            provider_not_configured: 'OAuth provider is not configured on this server.',
+            user_not_found: 'The linked panel account no longer exists.'
+        };
+        error.textContent = friendly[oauth] || `OAuth login failed: ${oauth}`;
+
+        url.searchParams.delete('oauth');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? `?${url.searchParams.toString()}` : ''));
+    }
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
+
+    async function loadOAuthButtons() {
+        const container = document.getElementById('oauthActions');
+        try {
+            const data = await api('/api/oauth/providers');
+            const providers = Array.isArray(data.providers) ? data.providers : [];
+            const available = providers.filter(provider => provider && provider.enabled && provider.configured);
+            if (available.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = available
+                .map(provider => `<button class="secondary" data-oauth="${provider.provider}">Continue with ${provider.label}</button>`)
+                .join('');
+
+            container.querySelectorAll('button[data-oauth]').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const provider = button.getAttribute('data-oauth');
+                    error.textContent = '';
+                    try {
+                        const start = await api(`/api/oauth/${provider}/start`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mode: 'login' })
+                        });
+                        window.location.href = start.authUrl;
+                    } catch (startError) {
+                        error.textContent = startError.message || 'Could not start OAuth login';
+                    }
+                });
+            });
+        } catch {
+            container.innerHTML = '';
+        }
+    }
+
     document.getElementById('login').addEventListener('click', async () => {
         error.textContent = '';
         const res = await fetch('/api/login', {
@@ -39,6 +106,9 @@
         }
         window.location.href = '/dashboard/overview';
     });
+
+    showOAuthQueryState();
+    loadOAuthButtons();
 </script>
 </body>
 </html>

@@ -42,6 +42,8 @@ public final class MinePanel extends JavaPlugin {
             ServerLogService serverLogService,
             BootstrapService bootstrapService,
             JoinLeaveEventRepository joinLeaveEventRepository,
+            OAuthAccountRepository oAuthAccountRepository,
+            OAuthStateRepository oAuthStateRepository,
             ExtensionManager extensionManager,
             WebAssetService webAssetService
     ) {}
@@ -87,6 +89,8 @@ public final class MinePanel extends JavaPlugin {
         PasswordHasher passwordHasher = new PasswordHasher();
         ServerLogService serverLogService = new ServerLogService(getDataFolder().toPath());
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
+        OAuthAccountRepository oAuthAccountRepository = new OAuthAccountRepository(database);
+        OAuthStateRepository oAuthStateRepository = new OAuthStateRepository(database);
         this.webAssetService = initializeWebAssets();
 
         this.extensionManager = initializeExtensions(knownPlayerRepository);
@@ -99,6 +103,8 @@ public final class MinePanel extends JavaPlugin {
                 serverLogService,
                 bootstrapService,
                 joinLeaveEventRepository,
+                oAuthAccountRepository,
+                oAuthStateRepository,
                 extensionManager,
                 webAssetService
         );
@@ -183,6 +189,8 @@ public final class MinePanel extends JavaPlugin {
                 startupContext.serverLogService(),
                 startupContext.bootstrapService(),
                 startupContext.joinLeaveEventRepository(),
+                startupContext.oAuthAccountRepository(),
+                startupContext.oAuthStateRepository(),
                 startupContext.extensionManager(),
                 startupContext.webAssetService()
         );

@@ -44,6 +44,7 @@
         }
 
         ensurePanelExtensionsLink(sideNav);
+        ensurePanelAccountLink(sideNav);
         enforceServerCategoryOrder(sideNav);
 
         try {
@@ -126,6 +127,7 @@
             ['/dashboard/discord-webhook', 'VIEW_DISCORD_WEBHOOK'],
             ['/dashboard/themes', 'VIEW_THEMES'],
             ['/dashboard/extensions', 'VIEW_EXTENSIONS'],
+            ['/dashboard/account', 'ACCESS_PANEL'],
             ['/dashboard/world-backups', 'VIEW_BACKUPS'],
             ['/dashboard/reports', 'VIEW_REPORTS'],
             ['/dashboard/tickets', 'VIEW_TICKETS']
@@ -240,6 +242,30 @@
         }
         link.href = '/dashboard/extensions';
         link.textContent = 'Extensions';
+        panelContainer.appendChild(link);
+    }
+
+    function ensurePanelAccountLink(sideNav) {
+        const panelContainer = ensureCategoryContainer(sideNav, 'panel');
+        if (!panelContainer) {
+            return;
+        }
+
+        const existing = panelContainer.querySelector('a.side-link[href="/dashboard/account"]');
+        if (existing) {
+            if (window.location.pathname === '/dashboard/account') {
+                existing.classList.add('active');
+            }
+            return;
+        }
+
+        const link = document.createElement('a');
+        link.className = 'side-link';
+        if (window.location.pathname === '/dashboard/account') {
+            link.classList.add('active');
+        }
+        link.href = '/dashboard/account';
+        link.textContent = 'Account';
         panelContainer.appendChild(link);
     }
 

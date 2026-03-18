@@ -64,14 +64,7 @@ public final class MinePanel extends JavaPlugin {
         WebPanelConfig panelConfig = WebPanelConfig.fromConfig(getConfig());
         StartupContext startupContext = initializeStartupContext(panelConfig);
 
-        getLogger().info("");
-        logger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
-        logger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
-        logger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
-        logger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>"));
-        logger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
-        getLogger().info("");
-
+        announceMinePanelBanner();
         announceBootstrapToken(startupContext.bootstrapService());
 
         registerPluginListeners(startupContext.knownPlayerRepository());
@@ -301,5 +294,15 @@ public final class MinePanel extends JavaPlugin {
         } catch (IOException | IllegalStateException exception) {
             getLogger().warning("Could not export panel logs on disable: " + exception.getMessage());
         }
+    }
+
+    private void announceMinePanelBanner() {
+        getLogger().info("");
+        logger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
+        logger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
+        logger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
+        logger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>"));
+        logger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
+        getLogger().info("");
     }
 }

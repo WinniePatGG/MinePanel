@@ -7,6 +7,9 @@ import de.winniepat.minePanel.integrations.*;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
 import de.winniepat.minePanel.web.*;
+import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -35,6 +38,9 @@ public final class MinePanel extends JavaPlugin {
     private WebAssetService webAssetService;
     private ExtensionSettingsRepository extensionSettingsRepository;
 
+    MiniMessage mm = MiniMessage.miniMessage();
+    ComponentLogger logger = this.getComponentLogger();
+
     private record StartupContext(
             UserRepository userRepository,
             KnownPlayerRepository knownPlayerRepository,
@@ -58,12 +64,21 @@ public final class MinePanel extends JavaPlugin {
         WebPanelConfig panelConfig = WebPanelConfig.fromConfig(getConfig());
         StartupContext startupContext = initializeStartupContext(panelConfig);
 
+        getLogger().info("");
+        logger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
+        logger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
+        logger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
+        logger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>"));
+        logger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
+        getLogger().info("");
+
         announceBootstrapToken(startupContext.bootstrapService());
+
         registerPluginListeners(startupContext.knownPlayerRepository());
         synchronizeKnownPlayers(startupContext.knownPlayerRepository());
         startWebPanel(panelConfig, startupContext);
 
-        getLogger().info("MinePanel available at http://" + panelConfig.host() + ":" + panelConfig.port());
+        logger.info("{}{}:{}", mm.deserialize("<aqua>MinePanel available at: </aqua>"), "http://" +  panelConfig.host(), panelConfig.port());
         panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin started");
     }
 
@@ -141,9 +156,8 @@ public final class MinePanel extends JavaPlugin {
 
     private void announceBootstrapToken(BootstrapService bootstrapService) {
         bootstrapService.getBootstrapToken().ifPresent(token -> {
-            getLogger().warning("--------------------------------------------------------");
-            getLogger().warning("First launch setup token: " + token);
-            getLogger().warning("--------------------------------------------------------");
+            logger.info("{}{}", mm.deserialize("<dark_green>First launch setup token: </dark_green>"), token);
+            logger.info("");
         });
     }
 

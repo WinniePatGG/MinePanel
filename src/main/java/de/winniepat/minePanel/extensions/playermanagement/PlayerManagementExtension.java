@@ -8,10 +8,14 @@ import de.winniepat.minePanel.persistence.KnownPlayer;
 import de.winniepat.minePanel.users.PanelPermission;
 import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class PlayerManagementExtension implements MinePanelExtension {
@@ -41,7 +45,23 @@ public final class PlayerManagementExtension implements MinePanelExtension {
     @Override
     public void onEnable() {
         muteRepository.clearExpired(Instant.now().toEpochMilli());
-        muteListener = new PlayerMuteListener(muteRepository);
+
+        FileConfiguration config = context.plugin().getConfig();
+        boolean badWordFilterEnabled = config.getBoolean("moderation.badWordFilter.enabled", false);
+        int autoMuteMinutes = Math.max(0, Math.min(43_200, config.getInt("moderation.badWordFilter.autoMuteMinutes", 15)));
+        String autoMuteReason = config.getString("moderation.badWordFilter.autoMuteReason", "Inappropriate language");
+        boolean cancelBlockedMessage = config.getBoolean("moderation.badWordFilter.cancelMessage", true);
+        Set<String> badWords = parseBadWords(config.getStringList("moderation.badWordFilter.words"));
+
+        muteListener = new PlayerMuteListener(
+                muteRepository,
+                context.panelLogger(),
+                badWordFilterEnabled,
+                badWords,
+                autoMuteMinutes,
+                autoMuteReason,
+                cancelBlockedMessage
+        );
         context.plugin().getServer().getPluginManager().registerEvents(muteListener, context.plugin());
     }
 
@@ -164,6 +184,21 @@ public final class PlayerManagementExtension implements MinePanelExtension {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private Set<String> parseBadWords(List<String> configuredWords) {
+        Set<String> result = new LinkedHashSet<>();
+        if (configuredWords == null) {
+            return result;
+        }
+
+        for (String rawWord : configuredWords) {
+            if (rawWord == null || rawWord.isBlank()) {
+                continue;
+            }
+            result.add(rawWord.trim());
+        }
+        return result;
     }
 
     private record MutePayload(String uuid, String username, Integer durationMinutes, String reason) {

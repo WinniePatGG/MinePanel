@@ -23,12 +23,3 @@ integrations:
     token: ""
     releaseCacheSeconds: 300
 
-moderation:
-  badWordFilter:
-    enabled: false
-    autoMuteMinutes: 15
-    autoMuteReason: "Inappropriate language"
-    cancelMessage: true
-    words:
-      - "badword1"
-      - "badword2"

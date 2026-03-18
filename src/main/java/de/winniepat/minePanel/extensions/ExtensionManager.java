@@ -178,6 +178,49 @@ public final class ExtensionManager {
         return tabs;
     }
 
+    public synchronized boolean supportsSettings(String extensionId) {
+        String normalizedId = normalizeExtensionId(extensionId);
+        if (normalizedId.isBlank()) {
+            return false;
+        }
+
+        for (MinePanelExtension extension : loadedExtensions) {
+            if (!normalizeExtensionId(extension.id()).equals(normalizedId)) {
+                continue;
+            }
+            return extension instanceof ExtensionConfigurable;
+        }
+
+        return false;
+    }
+
+    public synchronized boolean applySettings(String extensionId, String settingsJson) {
+        String normalizedId = normalizeExtensionId(extensionId);
+        if (normalizedId.isBlank()) {
+            return false;
+        }
+
+        for (MinePanelExtension extension : loadedExtensions) {
+            if (!normalizeExtensionId(extension.id()).equals(normalizedId)) {
+                continue;
+            }
+
+            if (!(extension instanceof ExtensionConfigurable configurable)) {
+                return false;
+            }
+
+            try {
+                configurable.onSettingsUpdated(settingsJson == null ? "{}" : settingsJson);
+                return true;
+            } catch (Exception exception) {
+                plugin.getLogger().warning("Could not apply live settings for extension " + extension.id() + ": " + exception.getMessage());
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     public synchronized void disableAll() {
         ListIterator<MinePanelExtension> iterator = loadedExtensions.listIterator(loadedExtensions.size());
         while (iterator.hasPrevious()) {
@@ -404,6 +447,14 @@ public final class ExtensionManager {
         }
 
         return normalized.replaceAll("[^a-z0-9]", "");
+    }
+
+    private String normalizeExtensionId(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return "";
+        }
+
+        return rawId.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     private ArtifactVersionToken parseArtifactVersion(String fileName) {

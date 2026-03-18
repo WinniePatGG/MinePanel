@@ -33,6 +33,7 @@ public final class MinePanel extends JavaPlugin {
     private ExtensionManager extensionManager;
     private ExtensionCommandRegistry extensionCommandRegistry;
     private WebAssetService webAssetService;
+    private ExtensionSettingsRepository extensionSettingsRepository;
 
     private record StartupContext(
             UserRepository userRepository,
@@ -45,7 +46,8 @@ public final class MinePanel extends JavaPlugin {
             OAuthAccountRepository oAuthAccountRepository,
             OAuthStateRepository oAuthStateRepository,
             ExtensionManager extensionManager,
-            WebAssetService webAssetService
+            WebAssetService webAssetService,
+            ExtensionSettingsRepository extensionSettingsRepository
     ) {}
 
     @Override
@@ -91,6 +93,7 @@ public final class MinePanel extends JavaPlugin {
         BootstrapService bootstrapService = new BootstrapService(userRepository, panelConfig.bootstrapTokenLength());
         OAuthAccountRepository oAuthAccountRepository = new OAuthAccountRepository(database);
         OAuthStateRepository oAuthStateRepository = new OAuthStateRepository(database);
+        this.extensionSettingsRepository = new ExtensionSettingsRepository(database);
         this.webAssetService = initializeWebAssets();
 
         this.extensionManager = initializeExtensions(knownPlayerRepository);
@@ -106,7 +109,8 @@ public final class MinePanel extends JavaPlugin {
                 oAuthAccountRepository,
                 oAuthStateRepository,
                 extensionManager,
-                webAssetService
+                webAssetService,
+                extensionSettingsRepository
         );
     }
 
@@ -192,7 +196,8 @@ public final class MinePanel extends JavaPlugin {
                 startupContext.oAuthAccountRepository(),
                 startupContext.oAuthStateRepository(),
                 startupContext.extensionManager(),
-                startupContext.webAssetService()
+                startupContext.webAssetService(),
+                startupContext.extensionSettingsRepository()
         );
         this.webPanelServer.start();
     }

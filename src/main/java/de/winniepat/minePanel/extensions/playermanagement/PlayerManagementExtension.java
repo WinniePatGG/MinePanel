@@ -1,14 +1,18 @@
 package de.winniepat.minePanel.extensions.playermanagement;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import de.winniepat.minePanel.extensions.ExtensionConfigurable;
 import de.winniepat.minePanel.extensions.ExtensionContext;
 import de.winniepat.minePanel.extensions.ExtensionWebRegistry;
 import de.winniepat.minePanel.extensions.MinePanelExtension;
+import de.winniepat.minePanel.persistence.ExtensionSettingsRepository;
 import de.winniepat.minePanel.persistence.KnownPlayer;
 import de.winniepat.minePanel.users.PanelPermission;
 import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
-import org.bukkit.configuration.file.FileConfiguration;
 
 import java.time.Instant;
 import java.util.LinkedHashSet;
@@ -18,12 +22,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-public final class PlayerManagementExtension implements MinePanelExtension {
+public final class PlayerManagementExtension implements MinePanelExtension, ExtensionConfigurable {
 
     private final Gson gson = new Gson();
     private ExtensionContext context;
     private PlayerMuteRepository muteRepository;
     private PlayerMuteListener muteListener;
+    private ExtensionSettingsRepository extensionSettingsRepository;
 
     @Override
     public String id() {
@@ -40,27 +45,22 @@ public final class PlayerManagementExtension implements MinePanelExtension {
         this.context = context;
         this.muteRepository = new PlayerMuteRepository(context.database());
         this.muteRepository.initializeSchema();
+        this.extensionSettingsRepository = new ExtensionSettingsRepository(context.database());
     }
 
     @Override
     public void onEnable() {
         muteRepository.clearExpired(Instant.now().toEpochMilli());
-
-        FileConfiguration config = context.plugin().getConfig();
-        boolean badWordFilterEnabled = config.getBoolean("moderation.badWordFilter.enabled", false);
-        int autoMuteMinutes = Math.max(0, Math.min(43_200, config.getInt("moderation.badWordFilter.autoMuteMinutes", 15)));
-        String autoMuteReason = config.getString("moderation.badWordFilter.autoMuteReason", "Inappropriate language");
-        boolean cancelBlockedMessage = config.getBoolean("moderation.badWordFilter.cancelMessage", true);
-        Set<String> badWords = parseBadWords(config.getStringList("moderation.badWordFilter.words"));
+        ChatFilterSettings settings = loadChatFilterSettings();
 
         muteListener = new PlayerMuteListener(
                 muteRepository,
                 context.panelLogger(),
-                badWordFilterEnabled,
-                badWords,
-                autoMuteMinutes,
-                autoMuteReason,
-                cancelBlockedMessage
+                settings.enabled(),
+                settings.badWords(),
+                settings.autoMuteMinutes(),
+                settings.autoMuteReason(),
+                settings.cancelMessage()
         );
         context.plugin().getServer().getPluginManager().registerEvents(muteListener, context.plugin());
     }
@@ -71,6 +71,22 @@ public final class PlayerManagementExtension implements MinePanelExtension {
             HandlerList.unregisterAll(muteListener);
             muteListener = null;
         }
+    }
+
+    @Override
+    public void onSettingsUpdated(String settingsJson) {
+        ChatFilterSettings latest = parseChatFilterSettings(settingsJson);
+        if (muteListener == null) {
+            return;
+        }
+
+        muteListener.updateFilterConfig(
+                latest.enabled(),
+                latest.badWords(),
+                latest.autoMuteMinutes(),
+                latest.autoMuteReason(),
+                latest.cancelMessage()
+        );
     }
 
     @Override
@@ -199,6 +215,88 @@ public final class PlayerManagementExtension implements MinePanelExtension {
             result.add(rawWord.trim());
         }
         return result;
+    }
+
+    private ChatFilterSettings loadChatFilterSettings() {
+        String settingsJson = extensionSettingsRepository.findSettingsJson(id()).orElse("{}");
+        return parseChatFilterSettings(settingsJson);
+    }
+
+    private ChatFilterSettings parseChatFilterSettings(String settingsJson) {
+        try {
+            JsonElement root = gson.fromJson(settingsJson, JsonElement.class);
+            if (root == null || !root.isJsonObject()) {
+                return ChatFilterSettings.defaults();
+            }
+
+            JsonObject rootObject = root.getAsJsonObject();
+            JsonObject filter = rootObject.has("badWordFilter") && rootObject.get("badWordFilter").isJsonObject()
+                    ? rootObject.getAsJsonObject("badWordFilter")
+                    : new JsonObject();
+
+            boolean enabled = booleanValue(filter, "enabled", false);
+            int autoMuteMinutes = intValue(filter, "autoMuteMinutes", 15, 0, 43_200);
+            String autoMuteReason = stringValue(filter, "autoMuteReason", "Inappropriate language");
+            boolean cancelMessage = booleanValue(filter, "cancelMessage", true);
+            Set<String> words = parseBadWords(readWords(filter));
+            return new ChatFilterSettings(enabled, words, autoMuteMinutes, autoMuteReason, cancelMessage);
+        } catch (Exception exception) {
+            context.plugin().getLogger().warning("Could not parse player-management extension settings: " + exception.getMessage());
+            return ChatFilterSettings.defaults();
+        }
+    }
+
+    private List<String> readWords(JsonObject filter) {
+        if (filter == null || !filter.has("words") || !filter.get("words").isJsonArray()) {
+            return List.of();
+        }
+
+        JsonArray array = filter.getAsJsonArray("words");
+        java.util.ArrayList<String> words = new java.util.ArrayList<>();
+        for (JsonElement element : array) {
+            if (element == null || !element.isJsonPrimitive()) {
+                continue;
+            }
+            words.add(element.getAsString());
+        }
+        return words;
+    }
+
+    private boolean booleanValue(JsonObject object, String key, boolean fallback) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+            return fallback;
+        }
+        try {
+            return object.get(key).getAsBoolean();
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private int intValue(JsonObject object, String key, int fallback, int min, int max) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+            return fallback;
+        }
+        try {
+            int value = object.get(key).getAsInt();
+            return Math.max(min, Math.min(max, value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private String stringValue(JsonObject object, String key, String fallback) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+            return fallback;
+        }
+        String value = object.get(key).getAsString();
+        return (value == null || value.isBlank()) ? fallback : value.trim();
+    }
+
+    private record ChatFilterSettings(boolean enabled, Set<String> badWords, int autoMuteMinutes, String autoMuteReason, boolean cancelMessage) {
+        private static ChatFilterSettings defaults() {
+            return new ChatFilterSettings(false, Set.of(), 15, "Inappropriate language", true);
+        }
     }
 
     private record MutePayload(String uuid, String username, Integer durationMinutes, String reason) {

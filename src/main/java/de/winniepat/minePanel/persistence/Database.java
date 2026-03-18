@@ -116,6 +116,12 @@ public final class Database {
                     + "log_system INTEGER NOT NULL"
                     + ")");
 
+            statement.execute("CREATE TABLE IF NOT EXISTS extension_settings ("
+                    + "extension_id TEXT PRIMARY KEY,"
+                    + "settings_json TEXT NOT NULL DEFAULT '{}',"
+                    + "updated_at INTEGER NOT NULL DEFAULT 0"
+                    + ")");
+
             try {
                 statement.execute("ALTER TABLE discord_webhook_config ADD COLUMN log_security INTEGER NOT NULL DEFAULT 1");
             } catch (SQLException ignored) {

@@ -22,11 +22,11 @@ public final class PlayerMuteListener implements Listener {
 
     private final PlayerMuteRepository muteRepository;
     private final PanelLogger panelLogger;
-    private final boolean badWordFilterEnabled;
-    private final Set<String> badWords;
-    private final int autoMuteMinutes;
-    private final String autoMuteReason;
-    private final boolean cancelBlockedMessage;
+    private volatile boolean badWordFilterEnabled;
+    private volatile Set<String> badWords;
+    private volatile int autoMuteMinutes;
+    private volatile String autoMuteReason;
+    private volatile boolean cancelBlockedMessage;
 
     public PlayerMuteListener(
             PlayerMuteRepository muteRepository,
@@ -39,6 +39,16 @@ public final class PlayerMuteListener implements Listener {
     ) {
         this.muteRepository = muteRepository;
         this.panelLogger = panelLogger;
+        updateFilterConfig(badWordFilterEnabled, badWords, autoMuteMinutes, autoMuteReason, cancelBlockedMessage);
+    }
+
+    public void updateFilterConfig(
+            boolean badWordFilterEnabled,
+            Set<String> badWords,
+            int autoMuteMinutes,
+            String autoMuteReason,
+            boolean cancelBlockedMessage
+    ) {
         this.badWordFilterEnabled = badWordFilterEnabled;
         this.badWords = badWords == null ? Set.of() : new HashSet<>(badWords);
         this.autoMuteMinutes = Math.max(0, autoMuteMinutes);

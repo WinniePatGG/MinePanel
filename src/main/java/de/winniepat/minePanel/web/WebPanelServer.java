@@ -70,6 +70,7 @@ public final class WebPanelServer {
     private final OAuthStateRepository oAuthStateRepository;
     private final ExtensionManager extensionManager;
     private final WebAssetService webAssetService;
+    private final ExtensionSettingsRepository extensionSettingsRepository;
     private final Gson gson = new Gson();
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Deque<MetricSample> overviewSamples = new ArrayDeque<>();
@@ -96,7 +97,8 @@ public final class WebPanelServer {
             OAuthAccountRepository oAuthAccountRepository,
             OAuthStateRepository oAuthStateRepository,
             ExtensionManager extensionManager,
-            WebAssetService webAssetService
+            WebAssetService webAssetService,
+            ExtensionSettingsRepository extensionSettingsRepository
     ) {
         this.plugin = plugin;
         this.config = config;
@@ -115,6 +117,7 @@ public final class WebPanelServer {
         this.oAuthStateRepository = oAuthStateRepository;
         this.extensionManager = extensionManager;
         this.webAssetService = webAssetService;
+        this.extensionSettingsRepository = extensionSettingsRepository;
     }
 
     public void start() {
@@ -214,6 +217,11 @@ public final class WebPanelServer {
             return webAssetService.readText("dashboard-extensions.html");
         });
 
+        get("/dashboard/extension-config", (request, response) -> {
+            response.type("text/html");
+            return webAssetService.readText("dashboard-extension-config.html");
+        });
+
         get("/dashboard/account", (request, response) -> {
             response.type("text/html");
             return webAssetService.readText("dashboard-account.html");
@@ -271,6 +279,9 @@ public final class WebPanelServer {
             get("/account/links", (request, response) -> handleAccountLinks(request, response));
             get("/extensions/navigation", (request, response) -> handleExtensionNavigation(request, response));
             get("/extensions/status", (request, response) -> handleExtensionStatus(request, response));
+            get("/extensions/config", (request, response) -> handleExtensionConfigList(request, response));
+            get("/extensions/config/:id", (request, response) -> handleExtensionConfigGet(request, response));
+            post("/extensions/config/:id", (request, response) -> handleExtensionConfigSave(request, response));
             post("/extensions/install", (request, response) -> handleExtensionInstall(request, response));
             post("/extensions/reload", (request, response) -> handleExtensionReload(request, response));
             get("/web/live-version", (request, response) -> handleWebLiveVersion(response));
@@ -2379,6 +2390,7 @@ public final class WebPanelServer {
             case "/dashboard/discord-webhook" -> PanelPermission.VIEW_DISCORD_WEBHOOK;
             case "/dashboard/themes" -> PanelPermission.VIEW_THEMES;
             case "/dashboard/extensions" -> PanelPermission.VIEW_EXTENSIONS;
+            case "/dashboard/extension-config" -> PanelPermission.VIEW_EXTENSIONS;
             case "/dashboard/world-backups" -> PanelPermission.VIEW_BACKUPS;
             case "/dashboard/reports" -> PanelPermission.VIEW_REPORTS;
             case "/dashboard/tickets" -> PanelPermission.VIEW_TICKETS;
@@ -2498,6 +2510,126 @@ public final class WebPanelServer {
             payload.put("availableExtensionsWarning", lastGitHubCatalogError);
         }
         return json(response, 200, payload);
+    }
+
+    private String handleExtensionConfigList(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_EXTENSIONS);
+
+        List<Map<String, Object>> extensions = extensionManager.installedExtensions().stream()
+                .filter(entry -> extensionHasConfig(normalizeExtensionKey(String.valueOf(entry.getOrDefault("id", ""))))
+                )
+                .map(entry -> {
+                    String extensionId = normalizeExtensionKey(String.valueOf(entry.getOrDefault("id", "")));
+                    String settingsJson = extensionSettingsRepository.findSettingsJson(extensionId).orElse("{}");
+                    JsonObject settings = parseSettingsObject(settingsJson);
+
+                    Map<String, Object> row = new HashMap<>(entry);
+                    row.put("settings", settings == null ? new JsonObject() : settings);
+                    row.put("settingsJson", settingsJson);
+                    return row;
+                })
+                .toList();
+
+        return json(response, 200, Map.of("extensions", extensions));
+    }
+
+    private String handleExtensionConfigGet(Request request, Response response) {
+        requireUser(request, PanelPermission.VIEW_EXTENSIONS);
+
+        String extensionId = normalizeExtensionKey(request.params("id"));
+        if (extensionId.isBlank()) {
+            return json(response, 400, Map.of("error", "invalid_extension_id"));
+        }
+
+        if (!extensionHasConfig(extensionId)) {
+            return json(response, 404, Map.of("error", "extension_has_no_config"));
+        }
+
+        if (!isInstalledExtension(extensionId)) {
+            return json(response, 404, Map.of("error", "extension_not_installed"));
+        }
+
+        String settingsJson = extensionSettingsRepository.findSettingsJson(extensionId).orElse("{}");
+        JsonObject settings = parseSettingsObject(settingsJson);
+        return json(response, 200, Map.of(
+                "extensionId", extensionId,
+                "settings", settings == null ? new JsonObject() : settings,
+                "settingsJson", settingsJson
+        ));
+    }
+
+    private String handleExtensionConfigSave(Request request, Response response) {
+        PanelUser user = requireUser(request, PanelPermission.MANAGE_EXTENSIONS);
+
+        String extensionId = normalizeExtensionKey(request.params("id"));
+        if (extensionId.isBlank()) {
+            return json(response, 400, Map.of("error", "invalid_extension_id"));
+        }
+
+        if (!extensionHasConfig(extensionId)) {
+            return json(response, 404, Map.of("error", "extension_has_no_config"));
+        }
+
+        if (!isInstalledExtension(extensionId)) {
+            return json(response, 404, Map.of("error", "extension_not_installed"));
+        }
+
+        JsonObject payload;
+        try {
+            payload = gson.fromJson(request.body(), JsonObject.class);
+        } catch (JsonSyntaxException exception) {
+            return json(response, 400, Map.of("error", "invalid_payload"));
+        }
+
+        if (payload == null || !payload.has("settings") || payload.get("settings") == null || !payload.get("settings").isJsonObject()) {
+            return json(response, 400, Map.of("error", "invalid_settings_payload"));
+        }
+
+        JsonObject settings = payload.getAsJsonObject("settings");
+        String settingsJson = gson.toJson(settings);
+        extensionSettingsRepository.saveSettingsJson(extensionId, settingsJson, System.currentTimeMillis());
+        boolean liveApplied = extensionManager.applySettings(extensionId, settingsJson);
+        panelLogger.log("AUDIT", user.username(), "Updated extension settings for " + extensionId);
+
+        return json(response, 200, Map.of(
+                "ok", true,
+                "extensionId", extensionId,
+                "liveApplied", liveApplied,
+                "settings", settings,
+                "settingsJson", settingsJson
+        ));
+    }
+
+    private boolean isInstalledExtension(String extensionId) {
+        if (extensionId == null || extensionId.isBlank()) {
+            return false;
+        }
+        return extensionManager.installedExtensions().stream()
+                .map(entry -> normalizeExtensionKey(String.valueOf(entry.getOrDefault("id", ""))))
+                .anyMatch(installedId -> installedId.equals(extensionId));
+    }
+
+    private boolean extensionHasConfig(String extensionId) {
+        if (extensionId == null || extensionId.isBlank()) {
+            return false;
+        }
+
+        return extensionManager.supportsSettings(extensionId);
+    }
+
+    private JsonObject parseSettingsObject(String settingsJson) {
+        if (isBlank(settingsJson)) {
+            return new JsonObject();
+        }
+        try {
+            JsonElement element = gson.fromJson(settingsJson, JsonElement.class);
+            if (element != null && element.isJsonObject()) {
+                return element.getAsJsonObject();
+            }
+        } catch (Exception ignored) {
+            // Ignore malformed persisted settings and return empty defaults.
+        }
+        return new JsonObject();
     }
 
     private String handleExtensionInstall(Request request, Response response) {

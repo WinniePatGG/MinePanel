@@ -16,6 +16,7 @@ public final class WebAssetService {
             "dashboard-bans.html",
             "dashboard-console.html",
             "dashboard-discord-webhook.html",
+            "dashboard-extension-config.html",
             "dashboard-extensions.html",
             "dashboard-maintenance.html",
             "dashboard-overview.html",

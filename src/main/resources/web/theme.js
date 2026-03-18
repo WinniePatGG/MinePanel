@@ -45,6 +45,7 @@
 
         ensurePanelExtensionsLink(sideNav);
         ensurePanelAccountLink(sideNav);
+        ensurePanelExtensionConfigLink(sideNav);
         enforceServerCategoryOrder(sideNav);
 
         try {
@@ -56,6 +57,7 @@
             const payload = await response.json();
             const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
             if (tabs.length === 0) {
+                ensurePanelAccountLink(sideNav);
                 enforceServerCategoryOrder(sideNav);
                 return;
             }
@@ -88,10 +90,12 @@
                 existingHrefs.add(href);
             }
 
+            ensurePanelAccountLink(sideNav);
             enforceServerCategoryOrder(sideNav);
             await applySidebarPermissionVisibility(sideNav);
         } catch (ignored) {
             // Ignore extension tab loading issues on login/setup pages.
+            ensurePanelAccountLink(sideNav);
             enforceServerCategoryOrder(sideNav);
             await applySidebarPermissionVisibility(sideNav);
         }
@@ -127,6 +131,7 @@
             ['/dashboard/discord-webhook', 'VIEW_DISCORD_WEBHOOK'],
             ['/dashboard/themes', 'VIEW_THEMES'],
             ['/dashboard/extensions', 'VIEW_EXTENSIONS'],
+            ['/dashboard/extension-config', 'VIEW_EXTENSIONS'],
             ['/dashboard/account', 'ACCESS_PANEL'],
             ['/dashboard/world-backups', 'VIEW_BACKUPS'],
             ['/dashboard/maintenance', 'VIEW_MAINTENANCE'],
@@ -250,14 +255,44 @@
     }
 
     function ensurePanelAccountLink(sideNav) {
+        if (!sideNav) {
+            return;
+        }
+
+        sideNav.querySelectorAll('a.side-link[href="/dashboard/account"]').forEach(link => {
+            if (link.dataset.accountBottomLink === 'true') {
+                return;
+            }
+            link.remove();
+        });
+
+        let link = sideNav.querySelector('a.side-link[data-account-bottom-link="true"]');
+        if (!link) {
+            link = document.createElement('a');
+            link.className = 'side-link';
+            link.dataset.accountBottomLink = 'true';
+            link.href = '/dashboard/account';
+            link.textContent = 'Account';
+        }
+
+        link.classList.remove('active');
+        if (window.location.pathname === '/dashboard/account') {
+            link.classList.add('active');
+        }
+
+        // Keep Account as the bottom nav item below panel links/categories.
+        sideNav.appendChild(link);
+    }
+
+    function ensurePanelExtensionConfigLink(sideNav) {
         const panelContainer = ensureCategoryContainer(sideNav, 'panel');
         if (!panelContainer) {
             return;
         }
 
-        const existing = panelContainer.querySelector('a.side-link[href="/dashboard/account"]');
+        const existing = panelContainer.querySelector('a.side-link[href="/dashboard/extension-config"]');
         if (existing) {
-            if (window.location.pathname === '/dashboard/account') {
+            if (window.location.pathname === '/dashboard/extension-config') {
                 existing.classList.add('active');
             }
             return;
@@ -265,11 +300,11 @@
 
         const link = document.createElement('a');
         link.className = 'side-link';
-        if (window.location.pathname === '/dashboard/account') {
+        if (window.location.pathname === '/dashboard/extension-config') {
             link.classList.add('active');
         }
-        link.href = '/dashboard/account';
-        link.textContent = 'Account';
+        link.href = '/dashboard/extension-config';
+        link.textContent = 'Extension Config';
         panelContainer.appendChild(link);
     }
 

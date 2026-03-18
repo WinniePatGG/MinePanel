@@ -130,6 +130,7 @@
             ['/dashboard/account', 'ACCESS_PANEL'],
             ['/dashboard/world-backups', 'VIEW_BACKUPS'],
             ['/dashboard/maintenance', 'VIEW_MAINTENANCE'],
+            ['/dashboard/whitelist', 'VIEW_WHITELIST'],
             ['/dashboard/reports', 'VIEW_REPORTS'],
             ['/dashboard/tickets', 'VIEW_TICKETS']
         ]);
@@ -158,6 +159,7 @@
             '/dashboard/resources',
             '/dashboard/world-backups',
             '/dashboard/maintenance',
+            '/dashboard/whitelist',
             '/dashboard/players',
             '/dashboard/bans',
             '/dashboard/plugins',

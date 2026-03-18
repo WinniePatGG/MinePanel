@@ -25,6 +25,7 @@ public final class WebAssetService {
             "dashboard-resources.html",
             "dashboard-tickets.html",
             "dashboard-world-backups.html",
+            "dashboard-whitelist.html",
             "dashboard-themes.html",
             "dashboard-users.html",
             "login.html",

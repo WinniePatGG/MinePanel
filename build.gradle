@@ -42,6 +42,7 @@ tasks.named('shadowJar') {
     exclude('de/winniepat/minePanel/extensions/worldbackups/**')
     exclude('de/winniepat/minePanel/extensions/airstrike/**')
     exclude('de/winniepat/minePanel/extensions/maintenance/**')
+    exclude('de/winniepat/minePanel/extensions/whitelist/**')
 }
 
 def extensionOutputDir = layout.buildDirectory.dir('libs/extensions')
@@ -198,10 +199,29 @@ tasks.register('maintenanceExtensionJar', Jar) {
     }
 }
 
+tasks.register('whitelistExtensionJar', Jar) {
+    group = 'build'
+    description = 'Builds the MinePanel whitelist extension jar.'
+    dependsOn(tasks.named('classes'))
+
+    archiveBaseName.set('MinePanel-Extension-Whitelist')
+    archiveVersion.set(project.version.toString())
+    destinationDirectory.set(extensionOutputDir)
+
+    from(sourceSets.main.output) {
+        include('de/winniepat/minePanel/extensions/whitelist/**')
+    }
+
+    from(resources.text.fromString('de.winniepat.minePanel.extensions.whitelist.WhitelistExtension\n')) {
+        into('META-INF/services')
+        rename { 'de.winniepat.minePanel.extensions.MinePanelExtension' }
+    }
+}
+
 tasks.register('installExtensionsToRunServer', Copy) {
     group = 'build'
     description = 'Copies built extension jars into run/plugins/MinePanel/extensions for local testing.'
-    dependsOn(tasks.named('reportsExtensionJar'), tasks.named('playerManagementExtensionJar'), tasks.named('luckPermsExtensionJar'), tasks.named('playerStatsExtensionJar'), tasks.named('ticketsExtensionJar'), tasks.named('worldBackupsExtensionJar'), tasks.named('airstrikeExtensionJar'), tasks.named('maintenanceExtensionJar'))
+    dependsOn(tasks.named('reportsExtensionJar'), tasks.named('playerManagementExtensionJar'), tasks.named('luckPermsExtensionJar'), tasks.named('playerStatsExtensionJar'), tasks.named('ticketsExtensionJar'), tasks.named('worldBackupsExtensionJar'), tasks.named('airstrikeExtensionJar'), tasks.named('maintenanceExtensionJar'), tasks.named('whitelistExtensionJar'))
 
     from(extensionOutputDir)
     include('*.jar')
@@ -218,6 +238,7 @@ tasks.named('assemble') {
     dependsOn(tasks.named('worldBackupsExtensionJar'))
     dependsOn(tasks.named('airstrikeExtensionJar'))
     dependsOn(tasks.named('maintenanceExtensionJar'))
+    dependsOn(tasks.named('whitelistExtensionJar'))
 }
 
 tasks {

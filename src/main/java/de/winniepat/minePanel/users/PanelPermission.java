@@ -40,7 +40,9 @@ public enum PanelPermission {
     VIEW_AIRSTRIKE("Extensions", "View Airstrike", "airstrike", true),
     MANAGE_AIRSTRIKE("Extensions", "Launch Airstrike", "airstrike", true),
     VIEW_MAINTENANCE("Extensions", "View Maintenance", "maintenance", true),
-    MANAGE_MAINTENANCE("Extensions", "Manage Maintenance", "maintenance", true);
+    MANAGE_MAINTENANCE("Extensions", "Manage Maintenance", "maintenance", true),
+    VIEW_WHITELIST("Extensions", "View Whitelist", "whitelist", true),
+    MANAGE_WHITELIST("Extensions", "Manage Whitelist", "whitelist", true);
 
     private final String category;
     private final String label;

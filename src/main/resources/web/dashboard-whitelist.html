@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Whitelist</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link" href="/dashboard/extensions">Extensions</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Whitelist</h1>
+        <p>View, add, and remove whitelisted players.</p>
+
+        <section class="card">
+            <h2>Whitelist Status</h2>
+            <div class="toolbar">
+                <strong id="whitelistStatus" style="align-self:center;min-width:180px;">Status: Unknown</strong>
+                <button id="enableWhitelistBtn">Enable Whitelist</button>
+                <button id="disableWhitelistBtn" class="secondary">Disable Whitelist</button>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Add Player</h2>
+            <div class="toolbar">
+                <input id="usernameInput" placeholder="Minecraft username">
+                <button id="addBtn">Add to Whitelist</button>
+                <button id="refreshBtn" class="secondary">Refresh</button>
+            </div>
+            <div id="statusMessage" class="warning" style="display:none;margin-top:10px;"></div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Whitelisted Players (<span id="count">0</span>)</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>UUID</th>
+                    <th>Online</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="whitelistBody"></tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const nextExpanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', nextExpanded);
+                toggle.classList.toggle('expanded', nextExpanded);
+                savedState[category] = nextExpanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            const error = new Error(payload.error || 'Request failed');
+            error.status = response.status;
+            throw error;
+        }
+        return payload;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function showStatus(message, isError) {
+        const box = document.getElementById('statusMessage');
+        if (!message) {
+            box.style.display = 'none';
+            box.textContent = '';
+            return;
+        }
+
+        box.style.display = 'block';
+        box.textContent = message;
+        box.style.borderColor = isError ? 'rgba(231, 76, 60, 0.45)' : 'rgba(46, 204, 113, 0.45)';
+        box.style.background = isError ? 'rgba(231, 76, 60, 0.16)' : 'rgba(46, 204, 113, 0.14)';
+        box.style.color = isError ? '#ffc7c1' : '#b9f8cf';
+    }
+
+    function renderWhitelist(entries) {
+        const tbody = document.getElementById('whitelistBody');
+        tbody.innerHTML = '';
+
+        if (!Array.isArray(entries) || entries.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4">No whitelisted players found</td>';
+            tbody.appendChild(row);
+            return;
+        }
+
+        for (const entry of entries) {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${entry.username || '-'}</td>
+                <td>${entry.uuid || '-'}</td>
+                <td>${entry.online ? 'Yes' : 'No'}</td>
+                <td><button class="danger" data-remove="${entry.username || ''}">Remove</button></td>
+            `;
+            tbody.appendChild(row);
+        }
+
+        tbody.querySelectorAll('button[data-remove]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const username = button.dataset.remove || '';
+                if (!username) {
+                    return;
+                }
+                await removeFromWhitelist(username);
+            });
+        });
+    }
+
+    function applyWhitelistStatus(enabled) {
+        const label = document.getElementById('whitelistStatus');
+        const active = enabled === true;
+        label.textContent = `Status: ${active ? 'Enabled' : 'Disabled'}`;
+        label.style.color = active ? '#8af0b4' : '#ff9ca1';
+    }
+
+    async function loadWhitelistStatus() {
+        const data = await api('/api/extensions/whitelist/status');
+        applyWhitelistStatus(data.enabled === true);
+    }
+
+    async function setWhitelistEnabled(enabled) {
+        const data = await api('/api/extensions/whitelist/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled === true })
+        });
+        applyWhitelistStatus(data.enabled === true);
+        showStatus(`Whitelist ${data.enabled ? 'enabled' : 'disabled'}.`, false);
+    }
+
+    async function loadWhitelist() {
+        const data = await api('/api/extensions/whitelist');
+        const entries = Array.isArray(data.entries) ? data.entries : [];
+        document.getElementById('count').textContent = String(data.count || entries.length);
+        renderWhitelist(entries);
+    }
+
+    async function addToWhitelist() {
+        const input = document.getElementById('usernameInput');
+        const username = input.value.trim();
+        if (!username) {
+            showStatus('Please enter a username.', true);
+            return;
+        }
+
+        await api('/api/extensions/whitelist/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username })
+        });
+
+        input.value = '';
+        showStatus(`Added ${username} to whitelist.`, false);
+        await loadWhitelist();
+    }
+
+    async function removeFromWhitelist(username) {
+        await api('/api/extensions/whitelist/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username })
+        });
+
+        showStatus(`Removed ${username} from whitelist.`, false);
+        await loadWhitelist();
+    }
+
+    document.getElementById('addBtn').addEventListener('click', async () => {
+        try {
+            await addToWhitelist();
+        } catch (error) {
+            showStatus(error.message || 'Could not add player.', true);
+        }
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+        try {
+            await loadWhitelistStatus();
+            await loadWhitelist();
+            showStatus('', false);
+        } catch (error) {
+            showStatus(error.message || 'Could not refresh whitelist.', true);
+        }
+    });
+
+    document.getElementById('enableWhitelistBtn').addEventListener('click', async () => {
+        try {
+            await setWhitelistEnabled(true);
+        } catch (error) {
+            showStatus(error.message || 'Could not enable whitelist.', true);
+        }
+    });
+
+    document.getElementById('disableWhitelistBtn').addEventListener('click', async () => {
+        try {
+            await setWhitelistEnabled(false);
+        } catch (error) {
+            showStatus(error.message || 'Could not disable whitelist.', true);
+        }
+    });
+
+    document.getElementById('usernameInput').addEventListener('keydown', async event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            try {
+                await addToWhitelist();
+            } catch (error) {
+                showStatus(error.message || 'Could not add player.', true);
+            }
+        }
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadWhitelistStatus();
+            await loadWhitelist();
+        } catch (error) {
+            if (error && error.status === 401) {
+                window.location.href = '/';
+                return;
+            }
+            showStatus((error && error.message) ? error.message : 'Could not load whitelist page.', true);
+            console.error('Whitelist page load failed:', error);
+        }
+    })();
+
+</script>
+</body>
+</html>
+

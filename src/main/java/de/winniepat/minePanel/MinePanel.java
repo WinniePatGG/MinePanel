@@ -146,7 +146,7 @@ public final class MinePanel extends JavaPlugin {
     private void registerPluginListeners(KnownPlayerRepository knownPlayerRepository) {
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
-        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository, joinLeaveEventRepository), this);
+        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository, joinLeaveEventRepository, panelLogger), this);
     }
 
     private void synchronizeKnownPlayers(KnownPlayerRepository knownPlayerRepository) {

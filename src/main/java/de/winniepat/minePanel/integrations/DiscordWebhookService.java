@@ -72,6 +72,7 @@ public final class DiscordWebhookService {
             case "COMMAND", "CONSOLE_COMMAND" -> config.logCommands();
             case "AUTH" -> config.logAuth();
             case "AUDIT" -> config.logAudit();
+            case "SECURITY" -> config.logSecurity();
             case "CONSOLE_RESPONSE" -> config.logConsoleResponse();
             case "SYSTEM" -> config.logSystem();
             default -> false;

@@ -67,6 +67,7 @@
                     <label class="checkbox-line"><input id="logCommands" type="checkbox">Commands</label>
                     <label class="checkbox-line"><input id="logAuth" type="checkbox">Auth</label>
                     <label class="checkbox-line"><input id="logAudit" type="checkbox">Audit</label>
+                    <label class="checkbox-line"><input id="logSecurity" type="checkbox">Security (Alt Alerts)</label>
                     <label class="checkbox-line"><input id="logConsoleResponse" type="checkbox">Console Response</label>
                     <label class="checkbox-line"><input id="logSystem" type="checkbox">System</label>
                 </div>
@@ -149,6 +150,7 @@
         document.getElementById('logCommands').checked = !!config.logCommands;
         document.getElementById('logAuth').checked = !!config.logAuth;
         document.getElementById('logAudit').checked = !!config.logAudit;
+        document.getElementById('logSecurity').checked = !!config.logSecurity;
         document.getElementById('logConsoleResponse').checked = !!config.logConsoleResponse;
         document.getElementById('logSystem').checked = !!config.logSystem;
     }
@@ -165,6 +167,7 @@
             logCommands: document.getElementById('logCommands').checked,
             logAuth: document.getElementById('logAuth').checked,
             logAudit: document.getElementById('logAudit').checked,
+            logSecurity: document.getElementById('logSecurity').checked,
             logConsoleResponse: document.getElementById('logConsoleResponse').checked,
             logSystem: document.getElementById('logSystem').checked
         };

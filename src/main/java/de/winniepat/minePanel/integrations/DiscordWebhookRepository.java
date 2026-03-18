@@ -14,7 +14,7 @@ public final class DiscordWebhookRepository {
 
     public DiscordWebhookConfig load() {
         String sql = "SELECT enabled, webhook_url, use_embed, bot_name, message_template, embed_title_template, "
-                + "log_chat, log_commands, log_auth, log_audit, log_console_response, log_system "
+                + "log_chat, log_commands, log_auth, log_audit, log_security, log_console_response, log_system "
                 + "FROM discord_webhook_config WHERE id = 1";
 
         try (Connection connection = database.getConnection();
@@ -32,6 +32,7 @@ public final class DiscordWebhookRepository {
                         resultSet.getInt("log_commands") == 1,
                         resultSet.getInt("log_auth") == 1,
                         resultSet.getInt("log_audit") == 1,
+                        resultSet.getInt("log_security") == 1,
                         resultSet.getInt("log_console_response") == 1,
                         resultSet.getInt("log_system") == 1
                 );
@@ -48,8 +49,8 @@ public final class DiscordWebhookRepository {
     public void save(DiscordWebhookConfig config) {
         String sql = "INSERT INTO discord_webhook_config(" 
                 + "id, enabled, webhook_url, use_embed, bot_name, message_template, embed_title_template, "
-                + "log_chat, log_commands, log_auth, log_audit, log_console_response, log_system"
-                + ") VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                + "log_chat, log_commands, log_auth, log_audit, log_security, log_console_response, log_system"
+                + ") VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 + "ON CONFLICT(id) DO UPDATE SET "
                 + "enabled=excluded.enabled, "
                 + "webhook_url=excluded.webhook_url, "
@@ -61,6 +62,7 @@ public final class DiscordWebhookRepository {
                 + "log_commands=excluded.log_commands, "
                 + "log_auth=excluded.log_auth, "
                 + "log_audit=excluded.log_audit, "
+                + "log_security=excluded.log_security, "
                 + "log_console_response=excluded.log_console_response, "
                 + "log_system=excluded.log_system";
 
@@ -76,8 +78,9 @@ public final class DiscordWebhookRepository {
             statement.setInt(8, config.logCommands() ? 1 : 0);
             statement.setInt(9, config.logAuth() ? 1 : 0);
             statement.setInt(10, config.logAudit() ? 1 : 0);
-            statement.setInt(11, config.logConsoleResponse() ? 1 : 0);
-            statement.setInt(12, config.logSystem() ? 1 : 0);
+            statement.setInt(11, config.logSecurity() ? 1 : 0);
+            statement.setInt(12, config.logConsoleResponse() ? 1 : 0);
+            statement.setInt(13, config.logSystem() ? 1 : 0);
             statement.executeUpdate();
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not save Discord webhook config", exception);

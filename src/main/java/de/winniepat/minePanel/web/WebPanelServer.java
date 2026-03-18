@@ -1170,6 +1170,7 @@ public final class WebPanelServer {
                 payload.logCommands() == null ? previous.logCommands() : payload.logCommands(),
                 payload.logAuth() == null ? previous.logAuth() : payload.logAuth(),
                 payload.logAudit() == null ? previous.logAudit() : payload.logAudit(),
+                payload.logSecurity() == null ? previous.logSecurity() : payload.logSecurity(),
                 payload.logConsoleResponse() == null ? previous.logConsoleResponse() : payload.logConsoleResponse(),
                 payload.logSystem() == null ? previous.logSystem() : payload.logSystem()
         );
@@ -1954,6 +1955,7 @@ public final class WebPanelServer {
         payload.put("logCommands", config.logCommands());
         payload.put("logAuth", config.logAuth());
         payload.put("logAudit", config.logAudit());
+        payload.put("logSecurity", config.logSecurity());
         payload.put("logConsoleResponse", config.logConsoleResponse());
         payload.put("logSystem", config.logSystem());
         return payload;
@@ -3133,6 +3135,7 @@ public final class WebPanelServer {
             Boolean logCommands,
             Boolean logAuth,
             Boolean logAudit,
+            Boolean logSecurity,
             Boolean logConsoleResponse,
             Boolean logSystem
     ) {

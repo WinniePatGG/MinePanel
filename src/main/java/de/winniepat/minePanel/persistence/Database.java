@@ -111,9 +111,16 @@ public final class Database {
                     + "log_commands INTEGER NOT NULL,"
                     + "log_auth INTEGER NOT NULL,"
                     + "log_audit INTEGER NOT NULL,"
+                    + "log_security INTEGER NOT NULL DEFAULT 1,"
                     + "log_console_response INTEGER NOT NULL,"
                     + "log_system INTEGER NOT NULL"
                     + ")");
+
+            try {
+                statement.execute("ALTER TABLE discord_webhook_config ADD COLUMN log_security INTEGER NOT NULL DEFAULT 1");
+            } catch (SQLException ignored) {
+                // Column already exists on upgraded installs.
+            }
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not initialize database", exception);
         }

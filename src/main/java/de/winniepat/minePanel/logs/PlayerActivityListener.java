@@ -20,6 +20,7 @@ public final class PlayerActivityListener implements Listener {
     private final KnownPlayerRepository knownPlayerRepository;
     private final PlayerActivityRepository playerActivityRepository;
     private final JoinLeaveEventRepository joinLeaveEventRepository;
+    private final PanelLogger panelLogger;
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Gson gson = new Gson();
 
@@ -27,12 +28,14 @@ public final class PlayerActivityListener implements Listener {
             MinePanel plugin,
             KnownPlayerRepository knownPlayerRepository,
             PlayerActivityRepository playerActivityRepository,
-            JoinLeaveEventRepository joinLeaveEventRepository
+            JoinLeaveEventRepository joinLeaveEventRepository,
+            PanelLogger panelLogger
     ) {
         this.plugin = plugin;
         this.knownPlayerRepository = knownPlayerRepository;
         this.playerActivityRepository = playerActivityRepository;
         this.joinLeaveEventRepository = joinLeaveEventRepository;
+        this.panelLogger = panelLogger;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -49,6 +52,19 @@ public final class PlayerActivityListener implements Listener {
             ip = player.getAddress().getAddress().getHostAddress();
         }
         playerActivityRepository.onJoin(uuid, now, ip);
+
+        if (!ip.isBlank()) {
+            Player matchingOnlinePlayer = findOtherOnlinePlayerWithSameIp(player, ip);
+            if (matchingOnlinePlayer != null) {
+                panelLogger.log(
+                        "SECURITY",
+                        "ALT_DETECT",
+                        "Possible alt account: " + player.getName()
+                                + " joined with IP " + ip
+                                + " already used by online player " + matchingOnlinePlayer.getName()
+                );
+            }
+        }
 
         if (!ip.isBlank()) {
             String ipAddress = ip;
@@ -105,6 +121,24 @@ public final class PlayerActivityListener implements Listener {
         } catch (Exception ignored) {
             return true;
         }
+    }
+
+    private Player findOtherOnlinePlayerWithSameIp(Player joinedPlayer, String ipAddress) {
+        for (Player online : plugin.getServer().getOnlinePlayers()) {
+            if (online.getUniqueId().equals(joinedPlayer.getUniqueId())) {
+                continue;
+            }
+
+            String onlineIp = "";
+            if (online.getAddress() != null && online.getAddress().getAddress() != null) {
+                onlineIp = online.getAddress().getAddress().getHostAddress();
+            }
+
+            if (!onlineIp.isBlank() && onlineIp.equals(ipAddress)) {
+                return online;
+            }
+        }
+        return null;
     }
 }
 

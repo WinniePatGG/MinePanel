@@ -11,6 +11,7 @@ public record DiscordWebhookConfig(
         boolean logCommands,
         boolean logAuth,
         boolean logAudit,
+        boolean logSecurity,
         boolean logConsoleResponse,
         boolean logSystem
 ) {
@@ -23,6 +24,7 @@ public record DiscordWebhookConfig(
                 "MinePanel",
                 "[{timestamp}] [{kind}] [{source}] {message}",
                 "MinePanel {kind}",
+                true,
                 true,
                 true,
                 true,

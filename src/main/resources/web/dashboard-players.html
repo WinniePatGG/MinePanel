@@ -157,7 +157,12 @@
     let playerStatsAvailable = false;
     let airstrikeAvailable = false;
     let mePermissions = [];
+    let selectedProfileRequestId = 0;
     const avatarCache = new Map();
+
+    function isCurrentProfileRequest(uuid, requestId) {
+        return selectedUuid === uuid && selectedProfileRequestId === requestId;
+    }
 
     async function api(url, options) {
         const res = await fetch(url, options);
@@ -279,28 +284,53 @@
         return parts.join(' ');
     }
 
-    function applyAvatar(img, uuid, username) {
+    function applyAvatar(img, uuid, username, requestId) {
+        img.dataset.avatarUuid = uuid;
+        img.dataset.avatarRequestId = String(requestId);
+        delete img.dataset.fallbackTried;
+
         const cached = avatarCache.get(uuid);
         if (cached) {
+            img.onerror = null;
+            img.onload = null;
             img.src = cached;
             return;
         }
 
         img.referrerPolicy = 'no-referrer';
         img.alt = `${username} skin face`;
+
+        function avatarRequestStillCurrent() {
+            return img.dataset.avatarUuid === uuid
+                && img.dataset.avatarRequestId === String(requestId)
+                && isCurrentProfileRequest(uuid, requestId);
+        }
+
         img.src = `https://crafatar.com/avatars/${uuid}?size=48&overlay`;
         img.onerror = () => {
+            if (!avatarRequestStillCurrent()) {
+                return;
+            }
+
             if (!img.dataset.fallbackTried) {
                 img.dataset.fallbackTried = '1';
                 img.src = `https://mc-heads.net/avatar/${encodeURIComponent(username)}/48`;
                 return;
             }
+
             img.onerror = null;
+            img.onload = null;
             img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="%23131f38"/><text x="24" y="30" text-anchor="middle" font-family="Arial" font-size="18" fill="%23a9bbdf">?</text></svg>';
-            avatarCache.set(uuid, img.src);
         };
         img.onload = () => {
-            avatarCache.set(uuid, img.src);
+            if (!avatarRequestStillCurrent()) {
+                return;
+            }
+
+            const currentSource = img.currentSrc || img.src || '';
+            if (currentSource.startsWith('http')) {
+                avatarCache.set(uuid, currentSource);
+            }
         };
     }
 
@@ -358,15 +388,24 @@
         });
     }
 
-    async function loadMuteState(uuid) {
+    async function loadMuteState(uuid, requestId) {
         const muteState = document.getElementById('profileMuteState');
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
         if (!playerManagementAvailable) {
             muteState.textContent = 'Mute: extension not installed';
             return;
         }
+
         muteState.textContent = 'Mute: -';
         try {
             const data = await api(`/api/extensions/player-management/mute/${encodeURIComponent(uuid)}`);
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+
             if (!data.muted) {
                 muteState.textContent = 'Mute: not muted';
                 return;
@@ -378,12 +417,20 @@
                 muteState.textContent = `Mute: active permanently (${data.reason || 'No reason'})`;
             }
         } catch {
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
             muteState.textContent = 'Mute: unavailable';
         }
     }
 
     async function loadPlayerProfile(uuid) {
+        const requestId = ++selectedProfileRequestId;
         const data = await api(`/api/players/profile/${encodeURIComponent(uuid)}`);
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
         const profile = data.profile;
 
         document.getElementById('profileEmpty').style.display = 'none';
@@ -403,14 +450,18 @@
         document.getElementById('profileIp').textContent = profile.lastIp || '-';
         document.getElementById('profileCountry').textContent = profile.country || 'Unknown';
 
-        applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username);
-        await loadMuteState(profile.uuid);
-        await loadPlayerStats(profile.uuid);
-        await loadLuckPermsState(profile.uuid);
+        applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username, requestId);
+        await loadMuteState(profile.uuid, requestId);
+        await loadPlayerStats(profile.uuid, requestId);
+        await loadLuckPermsState(profile.uuid, requestId);
     }
 
-    async function loadPlayerStats(uuid) {
+    async function loadPlayerStats(uuid, requestId) {
         const section = document.getElementById('playerStatsSection');
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
         if (!playerStatsAvailable) {
             section.style.display = 'none';
             return;
@@ -424,6 +475,10 @@
 
         try {
             const data = await api(`/api/extensions/player-stats/player/${encodeURIComponent(uuid)}`);
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+
             if (!data.available) {
                 section.style.display = 'none';
                 return;
@@ -440,12 +495,19 @@
                 document.getElementById('statsEconomyProvider').textContent = '-';
             }
         } catch {
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
             section.style.display = 'none';
         }
     }
 
-    async function loadLuckPermsState(uuid) {
+    async function loadLuckPermsState(uuid, requestId) {
         const section = document.getElementById('luckPermsSection');
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
         if (!luckPermsAvailable) {
             section.style.display = 'none';
             return;
@@ -460,6 +522,10 @@
 
         try {
             const data = await api(`/api/extensions/luckperms/player/${encodeURIComponent(uuid)}`);
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+
             if (!data.available) {
                 section.style.display = 'none';
                 return;
@@ -481,6 +547,9 @@
                 ? permissions.join('\n')
                 : 'No granted permissions';
         } catch {
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
             section.style.display = 'none';
         }
     }

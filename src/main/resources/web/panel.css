@@ -379,6 +379,10 @@ button.secondary {
     min-height: 16px;
 }
 
+.error:empty {
+    display: none;
+}
+
 .toolbar {
     display: flex;
     gap: 8px;

@@ -22,6 +22,9 @@ import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.SecureRandom;
+import java.lang.management.BufferPoolMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -353,12 +356,16 @@ public final class WebPanelServer {
     private void captureOverviewSample() {
         long now = System.currentTimeMillis();
         Runtime runtime = Runtime.getRuntime();
-        long totalMemoryBytes = runtime.totalMemory();
-        long usedMemoryBytes = totalMemoryBytes - runtime.freeMemory();
+        long committedHeapBytes = runtime.totalMemory();
         long maxMemoryBytes = runtime.maxMemory();
+        long nonHeapUsedBytes = readNonHeapUsedBytes();
+        long nativeBufferBytes = readBufferPoolUsedBytes("direct") + readBufferPoolUsedBytes("mapped");
 
-        double memoryUsedMb = usedMemoryBytes / (1024.0 * 1024.0);
-        double memoryPercent = maxMemoryBytes > 0 ? (usedMemoryBytes * 100.0 / maxMemoryBytes) : 0.0;
+        long effectiveUsedMemoryBytes = committedHeapBytes + nonHeapUsedBytes + nativeBufferBytes;
+
+        double memoryUsedMb = effectiveUsedMemoryBytes / (1024.0 * 1024.0);
+        double memoryPercent = maxMemoryBytes > 0 ? (effectiveUsedMemoryBytes * 100.0 / maxMemoryBytes) : 0.0;
+        memoryPercent = Math.max(0.0, Math.min(100.0, memoryPercent));
         double cpuPercent = readProcessCpuPercent();
         double tps = readPrimaryTps();
 
@@ -391,6 +398,31 @@ public final class WebPanelServer {
             }
         }
         return -1.0;
+    }
+
+    private long readNonHeapUsedBytes() {
+        try {
+            MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
+            if (memoryMXBean == null || memoryMXBean.getNonHeapMemoryUsage() == null) {
+                return 0L;
+            }
+            return Math.max(0L, memoryMXBean.getNonHeapMemoryUsage().getUsed());
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
+    private long readBufferPoolUsedBytes(String poolName) {
+        try {
+            for (BufferPoolMXBean bufferPool : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
+                if (bufferPool != null && poolName.equalsIgnoreCase(bufferPool.getName())) {
+                    return Math.max(0L, bufferPool.getMemoryUsed());
+                }
+            }
+        } catch (Exception ignored) {
+            // Optional JVM metric; treat as unavailable.
+        }
+        return 0L;
     }
 
     private String handleOverviewMetrics(Request request, Response response) {

@@ -208,6 +208,7 @@ public final class MinePanel extends JavaPlugin {
         this.webPanelServer.start();
     }
 
+    @SuppressWarnings("all")
     private void configureThirdPartyStartupLogging() {
         System.setProperty("org.eclipse.jetty.util.log.announce", "false");
         System.setProperty("org.eclipse.jetty.LEVEL", "WARN");

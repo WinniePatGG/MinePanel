@@ -255,6 +255,11 @@ public final class WebPanelServer {
             return webAssetService.readText("dashboard-whitelist.html");
         });
 
+        get("/dashboard/announcements", (request, response) -> {
+            response.type("text/html");
+            return webAssetService.readText("dashboard-announcements.html");
+        });
+
         get("/panel.css", (request, response) -> {
             response.type("text/css");
             return webAssetService.readText("panel.css");
@@ -2428,6 +2433,7 @@ public final class WebPanelServer {
             case "/dashboard/tickets" -> PanelPermission.VIEW_TICKETS;
             case "/dashboard/maintenance" -> PanelPermission.VIEW_MAINTENANCE;
             case "/dashboard/whitelist" -> PanelPermission.VIEW_WHITELIST;
+            case "/dashboard/announcements" -> PanelPermission.VIEW_ANNOUNCEMENTS;
             default -> null;
         };
     }

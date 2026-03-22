@@ -36,7 +36,9 @@ public enum UserRole {
             PanelPermission.VIEW_MAINTENANCE,
             PanelPermission.MANAGE_MAINTENANCE,
             PanelPermission.VIEW_WHITELIST,
-            PanelPermission.MANAGE_WHITELIST
+            PanelPermission.MANAGE_WHITELIST,
+            PanelPermission.VIEW_ANNOUNCEMENTS,
+            PanelPermission.MANAGE_ANNOUNCEMENTS
     )),
     VIEWER(EnumSet.of(
             PanelPermission.ACCESS_PANEL,
@@ -55,7 +57,8 @@ public enum UserRole {
             PanelPermission.VIEW_LUCKPERMS,
             PanelPermission.VIEW_AIRSTRIKE,
             PanelPermission.VIEW_MAINTENANCE,
-            PanelPermission.VIEW_WHITELIST
+            PanelPermission.VIEW_WHITELIST,
+            PanelPermission.VIEW_ANNOUNCEMENTS
     ));
 
     private final Set<PanelPermission> permissions;

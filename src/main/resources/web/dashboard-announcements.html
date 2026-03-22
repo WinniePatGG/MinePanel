@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Announcements</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+    <style>
+        .announce-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        .announce-stat {
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 12px;
+            background: var(--panel-bg);
+        }
+
+        .announce-stat-title {
+            font-size: 12px;
+            color: var(--muted-text);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 5px;
+        }
+
+        .announce-stat-value {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .announce-list {
+            display: grid;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .announce-item {
+            border: 1px solid var(--table-row-border);
+            border-radius: 8px;
+            padding: 10px;
+            background: var(--panel-bg);
+            display: grid;
+            gap: 8px;
+        }
+
+        .announce-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .announce-meta {
+            color: var(--muted-text);
+            font-size: 12px;
+        }
+
+        .announce-message {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .announce-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--muted-text);
+        }
+
+        .announce-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .announce-message-input {
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            padding: 10px 11px;
+            font-size: 14px;
+            line-height: 1.4;
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        .announce-message-input:focus {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: 1px;
+        }
+
+        .announce-empty {
+            color: var(--muted-text);
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .announce-placeholders {
+            margin-top: 8px;
+            color: var(--muted-text);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link" href="/dashboard/extensions">Extensions</a>
+                <a class="side-link" href="/dashboard/extension-config">Extension Config</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Announcements</h1>
+        <p>Broadcast rotating server announcements to all online players.</p>
+
+        <section class="card">
+            <h2>Status</h2>
+            <div class="announce-grid">
+                <div class="announce-stat">
+                    <div class="announce-stat-title">State</div>
+                    <div id="stateValue" class="announce-stat-value">Disabled</div>
+                </div>
+                <div class="announce-stat">
+                    <div class="announce-stat-title">Interval</div>
+                    <div id="intervalValue" class="announce-stat-value">300s</div>
+                </div>
+                <div class="announce-stat">
+                    <div class="announce-stat-title">Next Broadcast</div>
+                    <div id="nextRunValue" class="announce-stat-value">-</div>
+                </div>
+                <div class="announce-stat">
+                    <div class="announce-stat-title">Messages</div>
+                    <div id="countValue" class="announce-stat-value">0</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Configuration</h2>
+            <label class="checkbox-line"><input id="enabledInput" type="checkbox"> Enable automatic announcements</label>
+            <label for="intervalInput">Broadcast interval (seconds)</label>
+            <input id="intervalInput" type="number" min="10" max="86400" value="300">
+            <div class="announce-toolbar">
+                <button id="saveConfigBtn">Save Configuration</button>
+                <button id="sendNowBtn" class="secondary">Send Next Message Now</button>
+                <button id="refreshBtn" class="secondary">Refresh</button>
+            </div>
+            <p id="status" class="action-status"></p>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Create Message</h2>
+            <textarea id="messageInput" class="announce-message-input" maxlength="220" placeholder="Welcome to the server! Use /ticket if you need support."></textarea>
+            <p class="announce-placeholders">
+                Add your own prefix directly in the message text (for example <code>[Network]</code> or <code>&lt;gold&gt;[MinePanel]&lt;/gold&gt;</code>).<br>
+                Placeholders: <code>%player%</code>, <code>%time%</code>, <code>%date%</code>, <code>%datetime%</code>, <code>%online%</code>, <code>%max_players%</code>, <code>%world%</code>, <code>%server%</code>, <code>%tps%</code>.
+            </p>
+            <div class="announce-toolbar">
+                <button id="createBtn">Add Message</button>
+            </div>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Messages</h2>
+            <div id="messageList" class="announce-list"></div>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const nextExpanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', nextExpanded);
+                toggle.classList.toggle('expanded', nextExpanded);
+                savedState[category] = nextExpanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            const error = new Error(payload.error || 'Request failed');
+            error.status = response.status;
+            throw error;
+        }
+        return payload;
+    }
+
+    function setStatus(message, isError) {
+        const status = document.getElementById('status');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function formatTimestamp(timestamp) {
+        const millis = Number(timestamp || 0);
+        if (!Number.isFinite(millis) || millis <= 0) {
+            return '-';
+        }
+        return new Date(millis).toLocaleString();
+    }
+
+    function applyState(state) {
+        const enabled = state && state.enabled === true;
+        const interval = Number(state && state.intervalSeconds ? state.intervalSeconds : 300);
+        const messages = Array.isArray(state && state.messages) ? state.messages : [];
+
+        document.getElementById('stateValue').textContent = enabled ? 'Enabled' : 'Disabled';
+        document.getElementById('intervalValue').textContent = `${interval}s`;
+        document.getElementById('nextRunValue').textContent = formatTimestamp(state ? state.nextRunAt : 0);
+        document.getElementById('countValue').textContent = String(messages.length);
+
+        document.getElementById('enabledInput').checked = enabled;
+        document.getElementById('intervalInput').value = String(interval);
+
+        renderMessages(messages);
+    }
+
+    function renderMessages(messages) {
+        const list = document.getElementById('messageList');
+        list.innerHTML = '';
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'announce-empty';
+            empty.textContent = 'No announcements configured yet.';
+            list.appendChild(empty);
+            return;
+        }
+
+        for (const entry of messages) {
+            const item = document.createElement('div');
+            item.className = 'announce-item';
+
+            const header = document.createElement('div');
+            header.className = 'announce-item-header';
+
+            const meta = document.createElement('div');
+            meta.className = 'announce-meta';
+            meta.textContent = `#${entry.id} · Updated ${formatTimestamp(entry.updatedAt)}`;
+
+            const controls = document.createElement('div');
+            controls.className = 'announce-toolbar';
+
+            const toggleLabel = document.createElement('label');
+            toggleLabel.className = 'announce-toggle';
+            toggleLabel.innerHTML = `<input type="checkbox" ${entry.enabled ? 'checked' : ''}> Enabled`;
+            toggleLabel.querySelector('input').addEventListener('change', async (event) => {
+                try {
+                    await api(`/api/extensions/announcements/messages/${entry.id}/toggle`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ enabled: !!event.target.checked })
+                    });
+                    await refresh();
+                } catch (error) {
+                    setStatus(`Could not update message #${entry.id}: ${error.message}`, true);
+                }
+            });
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'danger';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', async () => {
+                try {
+                    await api(`/api/extensions/announcements/messages/${entry.id}/delete`, {
+                        method: 'POST',
+                        credentials: 'same-origin'
+                    });
+                    setStatus(`Deleted announcement #${entry.id}`, false);
+                    await refresh();
+                } catch (error) {
+                    setStatus(`Could not delete message #${entry.id}: ${error.message}`, true);
+                }
+            });
+
+            controls.appendChild(toggleLabel);
+            controls.appendChild(deleteButton);
+            header.appendChild(meta);
+            header.appendChild(controls);
+
+            const message = document.createElement('div');
+            message.className = 'announce-message';
+            message.textContent = entry.message || '';
+
+            item.appendChild(header);
+            item.appendChild(message);
+            list.appendChild(item);
+        }
+    }
+
+    async function refresh() {
+        const state = await api('/api/extensions/announcements', { credentials: 'same-origin', cache: 'no-store' });
+        applyState(state);
+    }
+
+    async function saveConfig() {
+        const enabled = document.getElementById('enabledInput').checked;
+        const interval = Number(document.getElementById('intervalInput').value || 300);
+
+        try {
+            await api('/api/extensions/announcements/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ enabled, intervalSeconds: interval })
+            });
+            setStatus('Configuration saved', false);
+            await refresh();
+        } catch (error) {
+            setStatus(`Could not save configuration: ${error.message}`, true);
+        }
+    }
+
+    async function createMessage() {
+        const input = document.getElementById('messageInput');
+        const message = (input.value || '').trim();
+        if (!message) {
+            setStatus('Enter a message first.', true);
+            return;
+        }
+
+        try {
+            await api('/api/extensions/announcements/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ message })
+            });
+            input.value = '';
+            setStatus('Announcement added', false);
+            await refresh();
+        } catch (error) {
+            setStatus(`Could not create announcement: ${error.message}`, true);
+        }
+    }
+
+    async function sendNow() {
+        try {
+            await api('/api/extensions/announcements/send-now', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+            setStatus('Sent next announcement', false);
+            await refresh();
+        } catch (error) {
+            setStatus(`Could not send announcement: ${error.message}`, true);
+        }
+    }
+
+    async function logout() {
+        await api('/api/logout', { method: 'POST', credentials: 'same-origin' });
+        window.location.href = '/';
+    }
+
+    document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
+    document.getElementById('createBtn').addEventListener('click', createMessage);
+    document.getElementById('sendNowBtn').addEventListener('click', sendNow);
+    document.getElementById('refreshBtn').addEventListener('click', refresh);
+    document.getElementById('logout').addEventListener('click', logout);
+
+    (async function boot() {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await refresh();
+        } catch (error) {
+            if (error && error.status === 401) {
+                window.location.href = '/';
+                return;
+            }
+            setStatus(`Could not load announcements page: ${error.message}`, true);
+        }
+    })();
+</script>
+</body>
+</html>
+

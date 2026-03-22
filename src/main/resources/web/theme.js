@@ -43,6 +43,15 @@
             return;
         }
 
+        const extensionManagedPaths = new Set([
+            '/dashboard/world-backups',
+            '/dashboard/maintenance',
+            '/dashboard/whitelist',
+            '/dashboard/announcements',
+            '/dashboard/reports',
+            '/dashboard/tickets'
+        ]);
+
         ensurePanelExtensionsLink(sideNav);
         ensurePanelAccountLink(sideNav);
         ensurePanelExtensionConfigLink(sideNav);
@@ -56,6 +65,24 @@
 
             const payload = await response.json();
             const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
+            const runtimeTabPaths = new Set(
+                tabs
+                    .filter(tab => tab && typeof tab.path === 'string')
+                    .map(tab => tab.path.trim())
+                    .filter(Boolean)
+            );
+
+            // Remove hardcoded extension links that are not installed/loaded in this runtime.
+            sideNav.querySelectorAll('a.side-link').forEach(link => {
+                const href = (link.getAttribute('href') || '').trim();
+                if (!extensionManagedPaths.has(href)) {
+                    return;
+                }
+                if (!runtimeTabPaths.has(href)) {
+                    link.remove();
+                }
+            });
+
             if (tabs.length === 0) {
                 ensurePanelAccountLink(sideNav);
                 enforceServerCategoryOrder(sideNav);
@@ -118,6 +145,13 @@
             return;
         }
 
+        if (me.isOwner === true) {
+            sideNav.querySelectorAll('a.side-link').forEach(link => {
+                link.style.display = '';
+            });
+            return;
+        }
+
         const permissionSet = new Set(me.permissions);
         const linkPermissions = new Map([
             ['/dashboard/overview', 'VIEW_OVERVIEW'],
@@ -136,6 +170,7 @@
             ['/dashboard/world-backups', 'VIEW_BACKUPS'],
             ['/dashboard/maintenance', 'VIEW_MAINTENANCE'],
             ['/dashboard/whitelist', 'VIEW_WHITELIST'],
+            ['/dashboard/announcements', 'VIEW_ANNOUNCEMENTS'],
             ['/dashboard/reports', 'VIEW_REPORTS'],
             ['/dashboard/tickets', 'VIEW_TICKETS']
         ]);
@@ -165,6 +200,7 @@
             '/dashboard/world-backups',
             '/dashboard/maintenance',
             '/dashboard/whitelist',
+            '/dashboard/announcements',
             '/dashboard/players',
             '/dashboard/bans',
             '/dashboard/plugins',

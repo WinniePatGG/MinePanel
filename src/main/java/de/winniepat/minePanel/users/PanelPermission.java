@@ -42,7 +42,9 @@ public enum PanelPermission {
     VIEW_MAINTENANCE("Extensions", "View Maintenance", "maintenance", true),
     MANAGE_MAINTENANCE("Extensions", "Manage Maintenance", "maintenance", true),
     VIEW_WHITELIST("Extensions", "View Whitelist", "whitelist", true),
-    MANAGE_WHITELIST("Extensions", "Manage Whitelist", "whitelist", true);
+    MANAGE_WHITELIST("Extensions", "Manage Whitelist", "whitelist", true),
+    VIEW_ANNOUNCEMENTS("Extensions", "View Announcements", "announcements", true),
+    MANAGE_ANNOUNCEMENTS("Extensions", "Manage Announcements", "announcements", true);
 
     private final String category;
     private final String label;

@@ -14,6 +14,21 @@ public record PanelUser(
             return true;
         }
 
+        if (permission != null) {
+            String name = permission.name();
+            if (name.startsWith("VIEW_")) {
+                String manageName = "MANAGE_" + name.substring("VIEW_".length());
+                try {
+                    PanelPermission managePermission = PanelPermission.valueOf(manageName);
+                    if (permissions.contains(managePermission)) {
+                        return true;
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    // ignored
+                }
+            }
+        }
+
         if (permission == PanelPermission.VIEW_DASHBOARD) {
             return permissions.contains(PanelPermission.ACCESS_PANEL);
         }

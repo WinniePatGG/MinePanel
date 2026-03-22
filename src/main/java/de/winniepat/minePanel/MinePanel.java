@@ -9,7 +9,6 @@ import de.winniepat.minePanel.persistence.*;
 import de.winniepat.minePanel.web.*;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 

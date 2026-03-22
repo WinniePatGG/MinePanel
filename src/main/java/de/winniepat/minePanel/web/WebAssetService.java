@@ -8,6 +8,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public final class WebAssetService {
 
@@ -38,9 +41,13 @@ public final class WebAssetService {
 
     private static final String LEGACY_EXTENSIONS_DOWNLOAD_MARKER = "href=\"${downloadUrl}\"";
     private static final String CURRENT_EXTENSIONS_INSTALL_MARKER = "data-install-extension";
+    private static final long VERSION_CACHE_TTL_MILLIS = TimeUnit.SECONDS.toMillis(2);
 
     private final MinePanel plugin;
     private final Path webDirectory;
+    private final Map<String, CachedTextAsset> cachedTextAssets = new ConcurrentHashMap<>();
+    private volatile long cachedVersion = 0L;
+    private volatile long cachedVersionExpiresAt = 0L;
 
     public WebAssetService(MinePanel plugin, Path webDirectory) {
         this.plugin = plugin;
@@ -92,13 +99,26 @@ public final class WebAssetService {
     public String readText(String fileName) {
         Path target = resolveFile(fileName);
         try {
-            return Files.readString(target, StandardCharsets.UTF_8);
+            long lastModified = Files.exists(target) ? Files.getLastModifiedTime(target).toMillis() : 0L;
+            CachedTextAsset cached = cachedTextAssets.get(fileName);
+            if (cached != null && cached.lastModifiedMillis() == lastModified) {
+                return cached.content();
+            }
+
+            String content = Files.readString(target, StandardCharsets.UTF_8);
+            cachedTextAssets.put(fileName, new CachedTextAsset(lastModified, content));
+            return content;
         } catch (IOException exception) {
             throw new IllegalStateException("Could not read web asset: " + fileName, exception);
         }
     }
 
     public long currentVersion() {
+        long now = System.currentTimeMillis();
+        if (now < cachedVersionExpiresAt) {
+            return cachedVersion;
+        }
+
         long newest = 0L;
         for (String fileName : BUNDLED_WEB_FILES) {
             Path target = resolveFile(fileName);
@@ -111,7 +131,21 @@ public final class WebAssetService {
                 // Ignore broken files so the rest of the panel can continue serving assets.
             }
         }
+        cachedVersion = newest;
+        cachedVersionExpiresAt = now + VERSION_CACHE_TTL_MILLIS;
         return newest;
+    }
+
+    public long lastModifiedMillis(String fileName) {
+        Path target = resolveFile(fileName);
+        try {
+            if (!Files.exists(target)) {
+                return 0L;
+            }
+            return Files.getLastModifiedTime(target).toMillis();
+        } catch (IOException exception) {
+            return 0L;
+        }
     }
 
     private Path resolveFile(String fileName) {
@@ -124,6 +158,9 @@ public final class WebAssetService {
 
     public Path webDirectory() {
         return webDirectory;
+    }
+
+    private record CachedTextAsset(long lastModifiedMillis, String content) {
     }
 }
 

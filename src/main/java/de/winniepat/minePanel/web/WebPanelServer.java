@@ -27,6 +27,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -134,7 +135,24 @@ public final class WebPanelServer {
             response.body(gson.toJson(Map.of("error", "internal_server_error")));
         });
 
-        after((request, response) -> response.header("Cache-Control", "no-store"));
+        after((request, response) -> {
+            String path = request.pathInfo();
+            if (path == null) {
+                return;
+            }
+
+            if (path.startsWith("/api")) {
+                response.header("Cache-Control", "no-store");
+                return;
+            }
+
+            if (path.equals("/")
+                    || path.equals("/setup")
+                    || path.equals("/console")
+                    || path.startsWith("/dashboard")) {
+                response.header("Cache-Control", "no-store");
+            }
+        });
 
         notFound((request, response) -> {
             response.type("application/json");
@@ -261,13 +279,11 @@ public final class WebPanelServer {
         });
 
         get("/panel.css", (request, response) -> {
-            response.type("text/css");
-            return webAssetService.readText("panel.css");
+            return serveStaticWebAsset(request, response, "panel.css", "text/css");
         });
 
         get("/theme.js", (request, response) -> {
-            response.type("application/javascript");
-            return webAssetService.readText("theme.js");
+            return serveStaticWebAsset(request, response, "theme.js", "application/javascript");
         });
 
         get("/.well-known/appspecific/com.chrome.devtools.json", (request, response) -> {
@@ -2371,6 +2387,47 @@ public final class WebPanelServer {
         response.status(status);
         response.type("application/json");
         return gson.toJson(payload);
+    }
+
+    private Object serveStaticWebAsset(Request request, Response response, String fileName, String contentType) {
+        long lastModifiedMillis = webAssetService.lastModifiedMillis(fileName);
+        String eTag = "W/\"" + fileName + "-" + lastModifiedMillis + "\"";
+
+        response.header("Cache-Control", "public, max-age=60, must-revalidate");
+        response.header("ETag", eTag);
+        if (lastModifiedMillis > 0L) {
+            response.header("Last-Modified", formatHttpDate(lastModifiedMillis));
+        }
+
+        String ifNoneMatch = request.headers("If-None-Match");
+        if (ifNoneMatch != null && ifNoneMatch.equals(eTag)) {
+            response.status(304);
+            return "";
+        }
+
+        long ifModifiedSince = readIfModifiedSince(request);
+        if (ifModifiedSince > 0L && lastModifiedMillis > 0L) {
+            long normalizedServerMillis = (lastModifiedMillis / 1000L) * 1000L;
+            if (normalizedServerMillis <= ifModifiedSince) {
+                response.status(304);
+                return "";
+            }
+        }
+
+        response.type(contentType);
+        return webAssetService.readText(fileName);
+    }
+
+    private long readIfModifiedSince(Request request) {
+        try {
+            return request.raw().getDateHeader("If-Modified-Since");
+        } catch (IllegalArgumentException ignored) {
+            return -1L;
+        }
+    }
+
+    private String formatHttpDate(long epochMillis) {
+        return DateTimeFormatter.RFC_1123_DATE_TIME.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.of("GMT")));
     }
 
     private int parseInt(String rawValue, int fallback, int min, int max) {

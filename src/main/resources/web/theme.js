@@ -1,5 +1,9 @@
 (function () {
     const STORAGE_KEY = 'minepanel.customTheme';
+    const CURRENT_USER_CACHE_KEY = 'minepanel.me.cache';
+    const CURRENT_USER_CACHE_TTL_MS = 5000;
+    const EXT_NAV_CACHE_KEY = 'minepanel.extNav.cache';
+    const EXT_NAV_CACHE_TTL_MS = 30000;
 
     function applyTheme(theme) {
         if (!theme || typeof theme !== 'object') {
@@ -57,64 +61,30 @@
         ensurePanelExtensionConfigLink(sideNav);
         enforceServerCategoryOrder(sideNav);
 
+        const cachedTabs = readCachedExtensionTabs();
+        if (cachedTabs.length > 0) {
+            applyExtensionTabs(sideNav, cachedTabs, extensionManagedPaths);
+            ensurePanelAccountLink(sideNav);
+            enforceServerCategoryOrder(sideNav);
+            await applySidebarPermissionVisibility(sideNav);
+        }
+
         try {
-            const response = await fetch('/api/extensions/navigation', { credentials: 'same-origin' });
+            const response = await fetch('/api/extensions/navigation', { credentials: 'same-origin', cache: 'no-store' });
             if (!response.ok) {
                 return;
             }
 
             const payload = await response.json();
             const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
-            const runtimeTabPaths = new Set(
-                tabs
-                    .filter(tab => tab && typeof tab.path === 'string')
-                    .map(tab => tab.path.trim())
-                    .filter(Boolean)
-            );
-
-            // Remove hardcoded extension links that are not installed/loaded in this runtime.
-            sideNav.querySelectorAll('a.side-link').forEach(link => {
-                const href = (link.getAttribute('href') || '').trim();
-                if (!extensionManagedPaths.has(href)) {
-                    return;
-                }
-                if (!runtimeTabPaths.has(href)) {
-                    link.remove();
-                }
-            });
+            applyExtensionTabs(sideNav, tabs, extensionManagedPaths);
+            writeCachedExtensionTabs(tabs);
 
             if (tabs.length === 0) {
                 ensurePanelAccountLink(sideNav);
                 enforceServerCategoryOrder(sideNav);
+                await applySidebarPermissionVisibility(sideNav);
                 return;
-            }
-
-            const existingHrefs = new Set(Array.from(sideNav.querySelectorAll('a.side-link')).map(link => link.getAttribute('href')));
-            for (const tab of tabs) {
-                if (!tab || typeof tab.path !== 'string' || typeof tab.label !== 'string' || typeof tab.category !== 'string') {
-                    continue;
-                }
-
-                const href = tab.path.trim();
-                if (!href || existingHrefs.has(href)) {
-                    continue;
-                }
-
-                const category = tab.category.trim().toLowerCase();
-                const container = ensureCategoryContainer(sideNav, category);
-                if (!container) {
-                    continue;
-                }
-
-                const link = document.createElement('a');
-                link.className = 'side-link';
-                if (window.location.pathname === href) {
-                    link.classList.add('active');
-                }
-                link.href = href;
-                link.textContent = tab.label.trim() || href;
-                container.appendChild(link);
-                existingHrefs.add(href);
             }
 
             ensurePanelAccountLink(sideNav);
@@ -128,20 +98,94 @@
         }
     }
 
-    async function applySidebarPermissionVisibility(sideNav) {
-        let me;
-        try {
-            const response = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
-            if (!response.ok) {
+    function applyExtensionTabs(sideNav, tabs, extensionManagedPaths) {
+        const sanitizedTabs = (Array.isArray(tabs) ? tabs : [])
+            .filter(tab => tab && typeof tab.path === 'string' && typeof tab.label === 'string' && typeof tab.category === 'string')
+            .map(tab => ({
+                path: tab.path.trim(),
+                label: tab.label.trim(),
+                category: tab.category.trim().toLowerCase()
+            }))
+            .filter(tab => tab.path && tab.category);
+
+        const runtimeTabPaths = new Set(sanitizedTabs.map(tab => tab.path));
+
+        // Remove extension links that are not part of the currently loaded extension set.
+        sideNav.querySelectorAll('a.side-link').forEach(link => {
+            const href = (link.getAttribute('href') || '').trim();
+            if (!extensionManagedPaths.has(href)) {
                 return;
             }
-            const payload = await response.json();
-            me = payload && payload.user ? payload.user : null;
+            if (!runtimeTabPaths.has(href)) {
+                link.remove();
+            }
+        });
+
+        for (const tab of sanitizedTabs) {
+            const container = ensureCategoryContainer(sideNav, tab.category);
+            if (!container) {
+                continue;
+            }
+
+            let link = sideNav.querySelector(`a.side-link[href="${cssEscape(tab.path)}"]`);
+            if (!link) {
+                link = document.createElement('a');
+                link.className = 'side-link';
+                link.href = tab.path;
+                container.appendChild(link);
+            } else if (link.parentElement !== container) {
+                container.appendChild(link);
+            }
+
+            link.textContent = tab.label || tab.path;
+            link.classList.toggle('active', window.location.pathname === tab.path);
+        }
+    }
+
+    function readCachedExtensionTabs() {
+        const now = Date.now();
+        try {
+            const cachedRaw = sessionStorage.getItem(EXT_NAV_CACHE_KEY);
+            if (!cachedRaw) {
+                return [];
+            }
+
+            const cached = JSON.parse(cachedRaw);
+            if (!cached || typeof cached !== 'object' || Number(cached.expiresAt || 0) <= now) {
+                return [];
+            }
+
+            return Array.isArray(cached.tabs) ? cached.tabs : [];
         } catch (ignored) {
+            return [];
+        }
+    }
+
+    function writeCachedExtensionTabs(tabs) {
+        try {
+            sessionStorage.setItem(EXT_NAV_CACHE_KEY, JSON.stringify({
+                tabs: Array.isArray(tabs) ? tabs : [],
+                expiresAt: Date.now() + EXT_NAV_CACHE_TTL_MS
+            }));
+        } catch (ignored) {
+            // Ignore unavailable session storage.
+        }
+    }
+
+    function cssEscape(value) {
+        if (typeof window.CSS !== 'undefined' && typeof window.CSS.escape === 'function') {
+            return window.CSS.escape(value);
+        }
+        return String(value).replace(/"/g, '\\"');
+    }
+
+    async function applySidebarPermissionVisibility(sideNav) {
+        const me = await fetchCurrentUser();
+        if (!me) {
             return;
         }
 
-        if (!me || !Array.isArray(me.permissions)) {
+        if (!Array.isArray(me.permissions)) {
             return;
         }
 
@@ -185,6 +229,43 @@
             const allowed = permissionSet.has(required);
             link.style.display = allowed ? '' : 'none';
         });
+    }
+
+    async function fetchCurrentUser() {
+        const now = Date.now();
+        try {
+            const cachedRaw = sessionStorage.getItem(CURRENT_USER_CACHE_KEY);
+            if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                if (cached && typeof cached === 'object' && Number(cached.expiresAt || 0) > now) {
+                    return cached.user || null;
+                }
+            }
+        } catch (ignored) {
+            // Ignore malformed cache state.
+        }
+
+        try {
+            const response = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
+            if (!response.ok) {
+                return null;
+            }
+
+            const payload = await response.json();
+            const user = payload && payload.user ? payload.user : null;
+
+            try {
+                sessionStorage.setItem(CURRENT_USER_CACHE_KEY, JSON.stringify({
+                    user,
+                    expiresAt: now + CURRENT_USER_CACHE_TTL_MS
+                }));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+            return user;
+        } catch (ignored) {
+            return null;
+        }
     }
 
     function enforceServerCategoryOrder(sideNav) {
@@ -390,7 +471,12 @@
         }
 
         checkVersion();
-        window.setInterval(checkVersion, 2000);
+        window.setInterval(() => {
+            if (document.hidden) {
+                return;
+            }
+            checkVersion();
+        }, 5000);
     }
 
     loadTheme();

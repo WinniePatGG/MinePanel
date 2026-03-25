@@ -186,14 +186,14 @@ public final class WorldBackupService {
 
     private WorldSnapshot captureWorldSnapshot(String worldKey) {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            return plugin.schedulerBridge().callGlobal(() -> {
                 World world = resolveWorld(worldKey);
                 if (world == null) {
                     return null;
                 }
                 world.save();
                 return new WorldSnapshot(world.getName(), world.getWorldFolder().toPath());
-            }).get(3, TimeUnit.SECONDS);
+            }, 3, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return null;

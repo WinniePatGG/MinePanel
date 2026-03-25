@@ -6,6 +6,7 @@ import de.winniepat.minePanel.extensions.*;
 import de.winniepat.minePanel.integrations.*;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
+import de.winniepat.minePanel.util.ServerSchedulerBridge;
 import de.winniepat.minePanel.web.*;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -36,9 +37,10 @@ public final class MinePanel extends JavaPlugin {
     private ExtensionCommandRegistry extensionCommandRegistry;
     private WebAssetService webAssetService;
     private ExtensionSettingsRepository extensionSettingsRepository;
+    private ServerSchedulerBridge schedulerBridge;
 
     MiniMessage mm = MiniMessage.miniMessage();
-    ComponentLogger logger = this.getComponentLogger();
+    ComponentLogger componentLogger = this.getComponentLogger();
 
     private record StartupContext(
             UserRepository userRepository,
@@ -59,6 +61,7 @@ public final class MinePanel extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         configureThirdPartyStartupLogging();
+        this.schedulerBridge = new ServerSchedulerBridge(this);
 
         WebPanelConfig panelConfig = WebPanelConfig.fromConfig(getConfig());
         StartupContext startupContext = initializeStartupContext(panelConfig);
@@ -70,7 +73,7 @@ public final class MinePanel extends JavaPlugin {
         synchronizeKnownPlayers(startupContext.knownPlayerRepository());
         startWebPanel(panelConfig, startupContext);
 
-        logger.info("{}{}:{}", mm.deserialize("<aqua>MinePanel available at: </aqua>"), "http://" +  panelConfig.host(), panelConfig.port());
+        componentLogger.info("{}{}:{}", mm.deserialize("<aqua>MinePanel available at: </aqua>"), "http://" +  panelConfig.host(), panelConfig.port());
         panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin started");
     }
 
@@ -135,7 +138,8 @@ public final class MinePanel extends JavaPlugin {
                 panelLogger,
                 knownPlayerRepository,
                 playerActivityRepository,
-                extensionCommandRegistry
+                extensionCommandRegistry,
+                schedulerBridge
         );
         ExtensionManager manager = new ExtensionManager(this, context);
 
@@ -148,8 +152,8 @@ public final class MinePanel extends JavaPlugin {
 
     private void announceBootstrapToken(BootstrapService bootstrapService) {
         bootstrapService.getBootstrapToken().ifPresent(token -> {
-            logger.info("{}{}", mm.deserialize("<dark_green>First launch setup token: </dark_green>"), token);
-            logger.info("");
+            componentLogger.info("{}{}", mm.deserialize("<dark_green>First launch setup token: </dark_green>"), token);
+            componentLogger.info("");
         });
     }
 
@@ -157,6 +161,10 @@ public final class MinePanel extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
         getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository, joinLeaveEventRepository, panelLogger), this);
+    }
+
+    public ServerSchedulerBridge schedulerBridge() {
+        return schedulerBridge;
     }
 
     private void synchronizeKnownPlayers(KnownPlayerRepository knownPlayerRepository) {
@@ -298,11 +306,11 @@ public final class MinePanel extends JavaPlugin {
 
     private void announceMinePanelBanner() {
         getLogger().info("");
-        logger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
-        logger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
-        logger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
-        logger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>"));
-        logger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
+        componentLogger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
+        componentLogger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
+        componentLogger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
+        componentLogger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>"));
+        componentLogger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
         getLogger().info("");
     }
 }

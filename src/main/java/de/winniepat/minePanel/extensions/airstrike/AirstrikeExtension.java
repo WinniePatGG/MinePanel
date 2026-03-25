@@ -9,13 +9,15 @@ import de.winniepat.minePanel.users.PanelPermission;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TNTPrimed;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class AirstrikeExtension implements MinePanelExtension {
 
@@ -54,7 +56,20 @@ public final class AirstrikeExtension implements MinePanelExtension {
 
             int amount = sanitizeAmount(payload.amount());
 
-            Player target = resolveOnlineTarget(payload.uuid(), payload.username());
+            Player target;
+            try {
+                target = context.schedulerBridge().callGlobal(
+                        () -> resolveOnlineTarget(payload.uuid(), payload.username()),
+                        2,
+                        TimeUnit.SECONDS
+                );
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return webRegistry.json(response, 500, Map.of("error", "interrupted"));
+            } catch (ExecutionException | TimeoutException exception) {
+                return webRegistry.json(response, 500, Map.of("error", "lookup_failed"));
+            }
+
             if (target == null) {
                 return webRegistry.json(response, 404, Map.of("error", "player_not_online"));
             }
@@ -75,7 +90,9 @@ public final class AirstrikeExtension implements MinePanelExtension {
 
         context.panelLogger().log("AUDIT", actorName, "Triggered airstrike on " + targetName + " with " + totalTnt + " TNT");
 
-        new BukkitRunnable() {
+        final de.winniepat.minePanel.util.ServerSchedulerBridge.CancellableTask[] repeatingTask = new de.winniepat.minePanel.util.ServerSchedulerBridge.CancellableTask[1];
+
+        Runnable waveTask = new Runnable() {
             private int remainingTnt = totalTnt;
             private int remainingWaves = WAVE_COUNT;
 
@@ -84,7 +101,9 @@ public final class AirstrikeExtension implements MinePanelExtension {
                 Player onlineTarget = context.plugin().getServer().getPlayer(targetUuid);
                 if (onlineTarget == null || !onlineTarget.isOnline()) {
                     context.panelLogger().log("SYSTEM", "airstrike", "Airstrike cancelled because target went offline: " + targetName);
-                    cancel();
+                    if (repeatingTask[0] != null) {
+                        repeatingTask[0].cancel();
+                    }
                     return;
                 }
 
@@ -97,10 +116,14 @@ public final class AirstrikeExtension implements MinePanelExtension {
                 remainingWaves--;
 
                 if (remainingWaves <= 0 || remainingTnt <= 0) {
-                    cancel();
+                    if (repeatingTask[0] != null) {
+                        repeatingTask[0].cancel();
+                    }
                 }
             }
-        }.runTaskTimer(context.plugin(), 0L, WAVE_INTERVAL_TICKS);
+        };
+
+        repeatingTask[0] = context.schedulerBridge().runRepeatingGlobal(waveTask, 0L, WAVE_INTERVAL_TICKS);
     }
 
     private void spawnStrikeTnt(Player target) {

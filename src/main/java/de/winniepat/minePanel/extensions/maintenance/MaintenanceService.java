@@ -5,7 +5,6 @@ import org.bukkit.entity.Player;
 
 import java.time.Instant;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -131,12 +130,7 @@ public final class MaintenanceService {
 
     private int runSync(SyncIntTask task) {
         try {
-            if (context.plugin().getServer().isPrimaryThread()) {
-                return task.run();
-            }
-
-            Future<Integer> future = context.plugin().getServer().getScheduler().callSyncMethod(context.plugin(), task::run);
-            return future.get(10, TimeUnit.SECONDS);
+            return context.schedulerBridge().callGlobal(task::run, 10, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("maintenance_task_interrupted", exception);

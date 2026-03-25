@@ -5,6 +5,7 @@ api-version: '1.21'
 authors: [ WinniePatGG ]
 website: https://winniepat.de
 description: MinePanel with secure auth, user roles, and log history.
+folia-supported: true
 
 
 permissions:

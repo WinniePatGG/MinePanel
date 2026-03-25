@@ -67,14 +67,14 @@ public final class PlayerStatsExtension implements MinePanelExtension {
     }
 
     private StatsSnapshot fetchStats(UUID playerUuid) throws ExecutionException, InterruptedException, TimeoutException {
-        return context.plugin().getServer().getScheduler().callSyncMethod(context.plugin(), () -> {
+        return context.schedulerBridge().callGlobal(() -> {
             OfflinePlayer offlinePlayer = context.plugin().getServer().getOfflinePlayer(playerUuid);
             int kills = safeStatistic(offlinePlayer, Statistic.PLAYER_KILLS);
             int deaths = safeStatistic(offlinePlayer, Statistic.DEATHS);
 
             EconomyLookup economy = lookupEconomy(offlinePlayer);
             return new StatsSnapshot(kills, deaths, economy.available(), economy.balance(), economy.formatted(), economy.provider());
-        }).get(2, TimeUnit.SECONDS);
+        }, 2, TimeUnit.SECONDS);
     }
 
     private int safeStatistic(OfflinePlayer player, Statistic statistic) {

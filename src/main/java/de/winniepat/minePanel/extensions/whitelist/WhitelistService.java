@@ -130,16 +130,7 @@ public final class WhitelistService {
 
     private <T> T runSync(Callable<T> task) {
         try {
-            if (context.plugin().getServer().isPrimaryThread()) {
-                try {
-                    return task.call();
-                } catch (Exception exception) {
-                    throw new IllegalStateException("whitelist_task_failed", exception);
-                }
-            }
-
-            Future<T> future = context.plugin().getServer().getScheduler().callSyncMethod(context.plugin(), task);
-            return future.get(10, TimeUnit.SECONDS);
+            return context.schedulerBridge().callGlobal(task, 10, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("whitelist_task_interrupted", exception);

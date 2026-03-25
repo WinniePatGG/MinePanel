@@ -3,9 +3,12 @@
 ![MinePanel](https://img.shields.io/badge/MinePanel-Web%20Panel%20for%20Paper-4f8cff?style=for-the-badge)
 ![Java](https://img.shields.io/badge/Java-21-ff8a65?style=for-the-badge)
 ![Paper](https://img.shields.io/badge/Paper-1.21.x-58d68d?style=for-the-badge)
+![Folia](https://img.shields.io/badge/Folia-Compatible-8e44ad?style=for-the-badge)
 ![Extensions](https://img.shields.io/badge/Extensions-Modular-9b59b6?style=for-the-badge)
 
 MinePanel is a Paper plugin that runs an embedded web panel for Minecraft server administration.
+
+The plugin is compatible with both Paper and Folia (1.21.x).
 
 The core plugin provides a secure web UI (login, roles, sessions, dashboard pages, logs, users, etc.) and an extension system so extra features can be added as separate jars.
 

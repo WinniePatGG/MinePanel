@@ -8,12 +8,12 @@ import de.winniepat.minePanel.extensions.*;
 import de.winniepat.minePanel.integrations.*;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
+import de.winniepat.minePanel.util.ServerSchedulerBridge;
 import org.bukkit.BanEntry;
 import de.winniepat.minePanel.users.*;
 import org.bukkit.BanList;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
 import spark.*;
 
 import java.io.IOException;
@@ -82,7 +82,7 @@ public final class WebPanelServer {
     private long githubReleaseCacheExpiresAtMillis = 0L;
     private String lastGitHubCatalogError = "";
     private final Set<String> restartRequiredExtensionIds = new HashSet<>();
-    private BukkitTask overviewSamplerTask;
+    private ServerSchedulerBridge.CancellableTask overviewSamplerTask;
 
     public WebPanelServer(
             MinePanel plugin,
@@ -360,7 +360,7 @@ public final class WebPanelServer {
         synchronized (overviewSamples) {
             captureOverviewSample();
         }
-        overviewSamplerTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+        overviewSamplerTask = plugin.schedulerBridge().runRepeatingGlobal(() -> {
             synchronized (overviewSamples) {
                 captureOverviewSample();
             }
@@ -1423,12 +1423,12 @@ public final class WebPanelServer {
 
     private List<OnlinePlayerSnapshot> snapshotOnlinePlayers() {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () ->
+            return plugin.schedulerBridge().callGlobal(() ->
                     plugin.getServer().getOnlinePlayers().stream()
                             .sorted(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
                             .map(player -> new OnlinePlayerSnapshot(player.getUniqueId(), player.getName()))
                             .toList()
-            ).get(2, TimeUnit.SECONDS);
+            , 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while reading online players", exception);
@@ -1439,7 +1439,7 @@ public final class WebPanelServer {
 
     private Map<String, BanStatus> snapshotNameBans() {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            return plugin.schedulerBridge().callGlobal(() -> {
                 Map<String, BanStatus> bans = new HashMap<>();
                 for (BanEntry banEntry : plugin.getServer().getBanList(BanList.Type.NAME).getBanEntries()) {
                     String target = banEntry.getTarget();
@@ -1450,7 +1450,7 @@ public final class WebPanelServer {
                     bans.put(target.toLowerCase(), new BanStatus(expiration == null ? null : expiration.getTime()));
                 }
                 return bans;
-            }).get(2, TimeUnit.SECONDS);
+            }, 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while reading bans", exception);
@@ -1461,7 +1461,7 @@ public final class WebPanelServer {
 
     private List<Map<String, Object>> snapshotInstalledPlugins() {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () ->
+            return plugin.schedulerBridge().callGlobal(() ->
                     java.util.Arrays.stream(plugin.getServer().getPluginManager().getPlugins())
                             .sorted(Comparator.comparing(Plugin::getName, String.CASE_INSENSITIVE_ORDER))
                             .map(current -> Map.<String, Object>of(
@@ -1472,7 +1472,7 @@ public final class WebPanelServer {
                                     "authors", current.getDescription().getAuthors()
                             ))
                             .toList()
-            ).get(2, TimeUnit.SECONDS);
+            , 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while reading plugins", exception);
@@ -1483,9 +1483,9 @@ public final class WebPanelServer {
 
     private CommandDispatchResult dispatchConsoleCommand(String command) {
         try {
-            boolean dispatched = plugin.getServer().getScheduler().callSyncMethod(plugin,
+            boolean dispatched = plugin.schedulerBridge().callGlobal(
                     () -> plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command)
-            ).get(2, TimeUnit.SECONDS);
+            , 2, TimeUnit.SECONDS);
             if (dispatched) {
                 return new CommandDispatchResult(true, "executed");
             }
@@ -1500,7 +1500,7 @@ public final class WebPanelServer {
 
     private PlayerActionResult kickPlayerByUuid(UUID playerUuid, String reason) {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            return plugin.schedulerBridge().callGlobal(() -> {
                 Player target = plugin.getServer().getPlayer(playerUuid);
                 if (target == null) {
                     return new PlayerActionResult(false, null, "player_not_online");
@@ -1508,7 +1508,7 @@ public final class WebPanelServer {
                 String username = target.getName();
                 target.kickPlayer(reason);
                 return new PlayerActionResult(true, username, null);
-            }).get(2, TimeUnit.SECONDS);
+            }, 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new PlayerActionResult(false, null, "interrupted");
@@ -1519,7 +1519,7 @@ public final class WebPanelServer {
 
     private TempBanResult tempBanPlayer(UUID playerUuid, String username, int durationMinutes, String reason, String actingUsername) {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            return plugin.schedulerBridge().callGlobal(() -> {
                 Player onlinePlayer = plugin.getServer().getPlayer(playerUuid);
                 Date expiresAt = Date.from(Instant.now().plus(durationMinutes, ChronoUnit.MINUTES));
                 plugin.getServer().getBanList(BanList.Type.NAME)
@@ -1530,7 +1530,7 @@ public final class WebPanelServer {
                 }
 
                 return new TempBanResult(true, username, expiresAt.getTime(), null);
-            }).get(2, TimeUnit.SECONDS);
+            }, 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new TempBanResult(false, null, 0L, "interrupted");
@@ -1541,7 +1541,7 @@ public final class WebPanelServer {
 
     private PlayerActionResult banPlayer(String username, UUID playerUuid, String reason, String actingUsername) {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            return plugin.schedulerBridge().callGlobal(() -> {
                 plugin.getServer().getBanList(BanList.Type.NAME)
                         .addBan(username, reason, null, "WebPanel:" + actingUsername);
 
@@ -1557,7 +1557,7 @@ public final class WebPanelServer {
                 }
 
                 return new PlayerActionResult(true, username, null);
-            }).get(2, TimeUnit.SECONDS);
+            }, 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new PlayerActionResult(false, null, "interrupted");
@@ -1568,14 +1568,14 @@ public final class WebPanelServer {
 
     private boolean unbanPlayer(String username) {
         try {
-            return plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+            return plugin.schedulerBridge().callGlobal(() -> {
                 BanEntry banEntry = plugin.getServer().getBanList(BanList.Type.NAME).getBanEntry(username);
                 if (banEntry == null) {
                     return false;
                 }
                 plugin.getServer().getBanList(BanList.Type.NAME).pardon(username);
                 return true;
-            }).get(2, TimeUnit.SECONDS);
+            }, 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return false;
@@ -2865,9 +2865,9 @@ public final class WebPanelServer {
 
         ExtensionManager.ReloadResult reloadResult;
         try {
-            reloadResult = plugin.getServer().getScheduler().callSyncMethod(plugin,
+            reloadResult = plugin.schedulerBridge().callGlobal(
                     () -> extensionManager.reloadNewFromDirectory(new ExtensionSparkRegistry())
-            ).get(5, TimeUnit.SECONDS);
+            , 5, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return json(response, 500, Map.of("error", "reload_interrupted"));

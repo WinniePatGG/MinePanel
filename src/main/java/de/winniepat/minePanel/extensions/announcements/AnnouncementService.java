@@ -2,7 +2,6 @@ package de.winniepat.minePanel.extensions.announcements;
 
 import de.winniepat.minePanel.extensions.ExtensionContext;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -22,7 +21,7 @@ public final class AnnouncementService {
     private volatile int intervalSeconds;
     private volatile long nextRunAt;
     private int rotationCursor;
-    private BukkitTask task;
+    private de.winniepat.minePanel.util.ServerSchedulerBridge.CancellableTask task;
 
     public AnnouncementService(ExtensionContext context, AnnouncementRepository repository) {
         this.context = context;
@@ -37,7 +36,7 @@ public final class AnnouncementService {
 
     public void start() {
         stop();
-        this.task = context.plugin().getServer().getScheduler().runTaskTimer(context.plugin(), this::tick, 20L, 20L);
+        this.task = context.schedulerBridge().runRepeatingGlobal(this::tick, 20L, 20L);
     }
 
     public void stop() {

@@ -68,7 +68,7 @@ public final class PlayerActivityListener implements Listener {
 
         if (!ip.isBlank()) {
             String ipAddress = ip;
-            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            plugin.schedulerBridge().runAsync(() -> {
                 String country = resolveCountry(ipAddress);
                 playerActivityRepository.updateCountry(uuid, country);
             });

@@ -141,7 +141,7 @@ public final class ReportSystemExtension implements MinePanelExtension {
 
     private BanResult banPlayer(PlayerReport report, Integer durationMinutes, String reason, String actor) {
         try {
-            return context.plugin().getServer().getScheduler().callSyncMethod(context.plugin(), () -> {
+            return context.schedulerBridge().callGlobal(() -> {
                 Date expiresAt = null;
                 if (durationMinutes != null && durationMinutes > 0) {
                     int clampedMinutes = Math.min(durationMinutes, 43_200);
@@ -160,7 +160,7 @@ public final class ReportSystemExtension implements MinePanelExtension {
                 }
 
                 return new BanResult(true, expiresAt == null ? null : expiresAt.getTime(), "");
-            }).get(2, TimeUnit.SECONDS);
+            }, 2, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new BanResult(false, null, "interrupted");

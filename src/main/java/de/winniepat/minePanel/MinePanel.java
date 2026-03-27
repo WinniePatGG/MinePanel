@@ -309,7 +309,7 @@ public final class MinePanel extends JavaPlugin {
         componentLogger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
         componentLogger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
         componentLogger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
-        componentLogger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>"));
+        componentLogger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>" + "(" + getServer().getMinecraftVersion() + ")"));
         componentLogger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
         getLogger().info("");
     }

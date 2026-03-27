@@ -4,27 +4,19 @@ import de.winniepat.minePanel.auth.*;
 import de.winniepat.minePanel.config.WebPanelConfig;
 import de.winniepat.minePanel.extensions.*;
 import de.winniepat.minePanel.integrations.*;
+import de.winniepat.minePanel.lifecycle.PluginLifecycleSupport;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
 import de.winniepat.minePanel.util.ServerSchedulerBridge;
 import de.winniepat.minePanel.web.*;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.lang.reflect.Method;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.time.*;
-import java.time.format.DateTimeFormatter;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.nio.file.Path;
+import java.time.Instant;
 
 public final class MinePanel extends JavaPlugin {
-
-    private static final DateTimeFormatter EXPORT_FILE_NAME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
     private Database database;
     private WebPanelServer webPanelServer;
@@ -60,17 +52,23 @@ public final class MinePanel extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        configureThirdPartyStartupLogging();
+        PluginLifecycleSupport.configureThirdPartyStartupLogging();
         this.schedulerBridge = new ServerSchedulerBridge(this);
 
         WebPanelConfig panelConfig = WebPanelConfig.fromConfig(getConfig());
         StartupContext startupContext = initializeStartupContext(panelConfig);
 
-        announceMinePanelBanner();
-        announceBootstrapToken(startupContext.bootstrapService());
+        PluginLifecycleSupport.announceMinePanelBanner(this, componentLogger, mm);
+        PluginLifecycleSupport.announceBootstrapToken(startupContext.bootstrapService(), componentLogger, mm);
 
-        registerPluginListeners(startupContext.knownPlayerRepository());
-        synchronizeKnownPlayers(startupContext.knownPlayerRepository());
+        PluginLifecycleSupport.registerPluginListeners(
+                this,
+                panelLogger,
+                startupContext.knownPlayerRepository(),
+                playerActivityRepository,
+                joinLeaveEventRepository
+        );
+        PluginLifecycleSupport.synchronizeKnownPlayers(getServer(), startupContext.knownPlayerRepository(), playerActivityRepository);
         startWebPanel(panelConfig, startupContext);
 
         componentLogger.info("{}{}:{}", mm.deserialize("<aqua>MinePanel available at: </aqua>"), "http://" +  panelConfig.host(), panelConfig.port());
@@ -150,46 +148,8 @@ public final class MinePanel extends JavaPlugin {
         return manager;
     }
 
-    private void announceBootstrapToken(BootstrapService bootstrapService) {
-        bootstrapService.getBootstrapToken().ifPresent(token -> {
-            componentLogger.info("{}{}", mm.deserialize("<dark_green>First launch setup token: </dark_green>"), token);
-            componentLogger.info("");
-        });
-    }
-
-    private void registerPluginListeners(KnownPlayerRepository knownPlayerRepository) {
-        getServer().getPluginManager().registerEvents(new ChatCaptureListener(panelLogger), this);
-        getServer().getPluginManager().registerEvents(new CommandCaptureListener(panelLogger), this);
-        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this, knownPlayerRepository, playerActivityRepository, joinLeaveEventRepository, panelLogger), this);
-    }
-
     public ServerSchedulerBridge schedulerBridge() {
         return schedulerBridge;
-    }
-
-    private void synchronizeKnownPlayers(KnownPlayerRepository knownPlayerRepository) {
-        for (OfflinePlayer offlinePlayer : getServer().getOfflinePlayers()) {
-            if (offlinePlayer.getName() != null) {
-                knownPlayerRepository.upsert(offlinePlayer.getUniqueId(), offlinePlayer.getName());
-                playerActivityRepository.ensureFromOffline(
-                        offlinePlayer.getUniqueId(),
-                        Math.max(0L, offlinePlayer.getFirstPlayed()),
-                        Math.max(0L, offlinePlayer.getLastPlayed())
-                );
-            }
-        }
-
-        getServer().getOnlinePlayers().forEach(player -> {
-            knownPlayerRepository.upsert(player.getUniqueId(), player.getName());
-            long now = Instant.now().toEpochMilli();
-            playerActivityRepository.onJoin(
-                    player.getUniqueId(),
-                    now,
-                    player.getAddress() != null && player.getAddress().getAddress() != null
-                            ? player.getAddress().getAddress().getHostAddress()
-                            : ""
-            );
-        });
     }
 
     private void startWebPanel(WebPanelConfig panelConfig, StartupContext startupContext) {
@@ -216,29 +176,6 @@ public final class MinePanel extends JavaPlugin {
         this.webPanelServer.start();
     }
 
-    @SuppressWarnings("all")
-    private void configureThirdPartyStartupLogging() {
-        System.setProperty("org.eclipse.jetty.util.log.announce", "false");
-        System.setProperty("org.eclipse.jetty.LEVEL", "WARN");
-
-        Logger.getLogger("spark").setLevel(Level.WARNING);
-        Logger.getLogger("org.eclipse.jetty").setLevel(Level.WARNING);
-        Logger.getLogger("org.eclipse.jetty.util.log").setLevel(Level.WARNING);
-
-        try {
-            Class<?> levelClass = Class.forName("org.apache.logging.log4j.Level");
-            Class<?> configuratorClass = Class.forName("org.apache.logging.log4j.core.config.Configurator");
-            Method setLevelMethod = configuratorClass.getMethod("setLevel", String.class, levelClass);
-            Object warnLevel = levelClass.getField("WARN").get(null);
-
-            setLevelMethod.invoke(null, "spark", warnLevel);
-            setLevelMethod.invoke(null, "org.eclipse.jetty", warnLevel);
-            setLevelMethod.invoke(null, "org.eclipse.jetty.util.log", warnLevel);
-        } catch (ReflectiveOperationException ignored) {
-
-        }
-    }
-
     @Override
     public void onDisable() {
         if (webPanelServer != null) {
@@ -261,7 +198,7 @@ public final class MinePanel extends JavaPlugin {
         }
 
         if (logRepository != null) {
-            exportPanelLogsToServerLogsDirectory();
+            PluginLifecycleSupport.exportPanelLogsToServerLogsDirectory(getDataFolder().toPath(), logRepository, getLogger());
         }
 
         if (discordWebhookService != null) {
@@ -272,45 +209,4 @@ public final class MinePanel extends JavaPlugin {
         }
     }
 
-    private void exportPanelLogsToServerLogsDirectory() {
-        try {
-            Path logsDirectory = getDataFolder().toPath().resolve("logs");
-            Files.createDirectories(logsDirectory);
-
-            String timestamp = EXPORT_FILE_NAME_FORMAT.format(Instant.now().atZone(ZoneOffset.UTC));
-            Path exportFile = logsDirectory.resolve("minepanel-panel-" + timestamp + ".log");
-
-            StringBuilder output = new StringBuilder();
-            for (var entry : logRepository.allLogsAscending()) {
-                output.append(Instant.ofEpochMilli(entry.createdAt()))
-                        .append(" [")
-                        .append(entry.kind())
-                        .append("] [")
-                        .append(entry.source())
-                        .append("] ")
-                        .append(entry.message())
-                        .append(System.lineSeparator());
-            }
-
-            if (output.isEmpty()) {
-                output.append(Instant.now()).append(" [SYSTEM] [PLUGIN] No panel logs available during shutdown export").append(System.lineSeparator());
-            }
-
-            Files.writeString(exportFile, output, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-
-            getLogger().info("Exported panel logs to " + exportFile.toAbsolutePath());
-        } catch (IOException | IllegalStateException exception) {
-            getLogger().warning("Could not export panel logs on disable: " + exception.getMessage());
-        }
-    }
-
-    private void announceMinePanelBanner() {
-        getLogger().info("");
-        componentLogger.info(mm.deserialize("<gold> __  __  ____  </gold>"));
-        componentLogger.info(mm.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
-        componentLogger.info("{}{}", mm.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), mm.deserialize("<green>"+ getDescription().getVersion() + "</green>"));
-        componentLogger.info("{}{}", mm.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), mm.deserialize("<aqua>" + getServer().getName() + "</aqua>" + "(" + getServer().getMinecraftVersion() + ")"));
-        componentLogger.info(mm.deserialize("<gold>|_|  |_| |_|      </gold>"));
-        getLogger().info("");
-    }
 }

@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Extension Config</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+    <style>
+        .config-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: minmax(220px, 280px) 1fr;
+        }
+
+        .config-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .config-item {
+            border: 1px solid var(--table-row-border);
+            background: var(--panel-bg);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            color: var(--text);
+            text-align: left;
+            width: 100%;
+        }
+
+        .config-item.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .config-item small {
+            display: block;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+
+        .config-form {
+            display: grid;
+            gap: 10px;
+        }
+
+        .field-label {
+            margin-bottom: 4px;
+            color: var(--text-muted);
+            font-size: 13px;
+            display: block;
+        }
+
+        .word-list {
+            min-height: 130px;
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            padding: 10px 11px;
+            font-size: 14px;
+            line-height: 1.35;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .word-list:focus {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: 1px;
+        }
+
+        .kv-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .kv-row {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: 1.1fr 1.3fr 130px auto;
+            align-items: center;
+        }
+
+        .kv-row button {
+            width: auto;
+            min-width: 84px;
+        }
+
+        .hint {
+            margin-top: 10px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        @media (max-width: 980px) {
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link" href="/dashboard/extensions">Extensions</a>
+                <a class="side-link active" href="/dashboard/extension-config">Extension Config</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Extension Config</h1>
+        <p>Configure extension-specific settings from the panel using form fields.</p>
+
+        <section class="card">
+            <div class="config-grid">
+                <div>
+                    <h2>Installed Extensions</h2>
+                    <div id="extensionList" class="config-list"></div>
+                </div>
+                <div>
+                    <h2 id="editorTitle">Settings</h2>
+                    <div id="configForm" class="config-form"></div>
+                    <div class="toolbar">
+                        <button id="addFieldBtn" class="secondary" style="display:none;">Add Field</button>
+                        <button id="saveBtn">Save Settings</button>
+                        <button id="reloadBtn" class="secondary">Reload</button>
+                    </div>
+                    <p id="status" class="action-status"></p>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const expandedNow = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expandedNow);
+                toggle.classList.toggle('expanded', expandedNow);
+                savedState[category] = expandedNow;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            const error = new Error(payload.error || 'Request failed');
+            error.status = response.status;
+            throw error;
+        }
+        return payload;
+    }
+
+    function setStatus(message, isError) {
+        const status = document.getElementById('status');
+        status.textContent = message || '';
+        status.className = isError ? 'action-status error-text' : 'action-status success-text';
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    let extensions = [];
+    let selectedExtensionId = '';
+    let selectedSettings = {};
+
+    function defaultPlayerManagementSettings() {
+        return {
+            badWordFilter: {
+                enabled: false,
+                words: [],
+                autoMuteMinutes: 15,
+                autoMuteReason: 'Inappropriate language',
+                cancelMessage: true
+            }
+        };
+    }
+
+    function renderExtensionList() {
+        const list = document.getElementById('extensionList');
+        list.innerHTML = '';
+
+        if (!Array.isArray(extensions) || extensions.length === 0) {
+            const noData = document.createElement('div');
+            noData.textContent = 'No installed extensions found.';
+            list.appendChild(noData);
+            return;
+        }
+
+        for (const extension of extensions) {
+            const id = extension.id || '';
+            const displayName = extension.displayName || id;
+            const source = extension.source || 'unknown';
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'config-item' + (id === selectedExtensionId ? ' active' : '');
+            button.innerHTML = `<strong>${displayName}</strong><small>${id} - ${source}</small>`;
+            button.addEventListener('click', () => selectExtension(id));
+            list.appendChild(button);
+        }
+    }
+
+    function findExtension(extensionId) {
+        return extensions.find(x => (x.id || '') === extensionId) || null;
+    }
+
+    function clearConfigForm(message) {
+        const form = document.getElementById('configForm');
+        form.innerHTML = '';
+        const placeholder = document.createElement('p');
+        placeholder.className = 'hint';
+        placeholder.textContent = message || 'Select an extension to configure.';
+        form.appendChild(placeholder);
+    }
+
+    function renderPlayerManagementForm(settings) {
+        const merged = {
+            ...defaultPlayerManagementSettings(),
+            ...(settings && typeof settings === 'object' ? settings : {})
+        };
+        const filter = {
+            ...defaultPlayerManagementSettings().badWordFilter,
+            ...(merged.badWordFilter && typeof merged.badWordFilter === 'object' ? merged.badWordFilter : {})
+        };
+
+        const words = Array.isArray(filter.words) ? filter.words.join('\n') : '';
+        const form = document.getElementById('configForm');
+        form.innerHTML = `
+            <label class="checkbox-line"><input id="pmEnabled" type="checkbox"> Enable bad-word filter</label>
+            <div>
+                <label class="field-label" for="pmWords">Blocked words (one per line)</label>
+                <textarea id="pmWords" class="word-list" placeholder="word1\nword2"></textarea>
+            </div>
+            <div>
+                <label class="field-label" for="pmMinutes">Auto mute duration (minutes, 0 = permanent)</label>
+                <input id="pmMinutes" type="number" min="0" max="43200">
+            </div>
+            <div>
+                <label class="field-label" for="pmReason">Auto mute reason</label>
+                <input id="pmReason" type="text" maxlength="180">
+            </div>
+            <label class="checkbox-line"><input id="pmCancel" type="checkbox"> Cancel blocked message</label>
+        `;
+
+        document.getElementById('pmEnabled').checked = !!filter.enabled;
+        document.getElementById('pmWords').value = words;
+        document.getElementById('pmMinutes').value = Number.isFinite(Number(filter.autoMuteMinutes)) ? Number(filter.autoMuteMinutes) : 15;
+        document.getElementById('pmReason').value = filter.autoMuteReason || 'Inappropriate language';
+        document.getElementById('pmCancel').checked = filter.cancelMessage !== false;
+    }
+
+    function addGenericFieldRow(key, value, type) {
+        const list = document.getElementById('kvList');
+        if (!list) {
+            return;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'kv-row';
+        row.innerHTML = `
+            <input class="kv-key" type="text" placeholder="setting.key" value="${escapeHtmlAttribute(key || '')}">
+            <input class="kv-value" type="text" placeholder="value" value="${escapeHtmlAttribute(value == null ? '' : String(value))}">
+            <select class="kv-type">
+                <option value="string">Text</option>
+                <option value="number">Number</option>
+                <option value="boolean">True/False</option>
+            </select>
+            <button class="secondary" type="button">Remove</button>
+        `;
+
+        row.querySelector('.kv-type').value = type || 'string';
+        row.querySelector('button').addEventListener('click', () => row.remove());
+        list.appendChild(row);
+    }
+
+    function renderGenericForm(settings) {
+        const form = document.getElementById('configForm');
+        form.innerHTML = `
+            <p class="hint">This extension does not have dedicated fields yet. Use key/value fields.</p>
+            <div id="kvList" class="kv-list"></div>
+        `;
+
+        const source = settings && typeof settings === 'object' ? settings : {};
+        const entries = Object.entries(source);
+        if (entries.length === 0) {
+            addGenericFieldRow('', '', 'string');
+            return;
+        }
+
+        for (const [key, value] of entries) {
+            if (typeof value === 'number') {
+                addGenericFieldRow(key, value, 'number');
+                continue;
+            }
+            if (typeof value === 'boolean') {
+                addGenericFieldRow(key, value ? 'true' : 'false', 'boolean');
+                continue;
+            }
+            if (typeof value === 'string') {
+                addGenericFieldRow(key, value, 'string');
+                continue;
+            }
+            addGenericFieldRow(key, JSON.stringify(value), 'string');
+        }
+    }
+
+    function renderSettingsForm(extensionId, settings) {
+        const addFieldBtn = document.getElementById('addFieldBtn');
+        if (extensionId === 'player-management') {
+            addFieldBtn.style.display = 'none';
+            renderPlayerManagementForm(settings);
+            return;
+        }
+
+        addFieldBtn.style.display = '';
+        renderGenericForm(settings);
+    }
+
+    async function selectExtension(extensionId) {
+        selectedExtensionId = extensionId || '';
+        renderExtensionList();
+
+        const editorTitle = document.getElementById('editorTitle');
+        const extension = findExtension(selectedExtensionId);
+        if (!extension) {
+            editorTitle.textContent = 'Settings';
+            selectedSettings = {};
+            clearConfigForm('Select an extension to configure.');
+            return;
+        }
+
+        editorTitle.textContent = `${extension.displayName || extension.id} Settings`;
+
+        const payload = await api(`/api/extensions/config/${encodeURIComponent(selectedExtensionId)}`);
+        selectedSettings = payload && payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
+        renderSettingsForm(selectedExtensionId, selectedSettings);
+    }
+
+    async function loadExtensions() {
+        const payload = await api('/api/extensions/config');
+        extensions = Array.isArray(payload.extensions) ? payload.extensions : [];
+
+        if (!selectedExtensionId || !findExtension(selectedExtensionId)) {
+            selectedExtensionId = extensions.length > 0 ? (extensions[0].id || '') : '';
+        }
+
+        renderExtensionList();
+        if (selectedExtensionId) {
+            await selectExtension(selectedExtensionId);
+        } else {
+            selectedSettings = {};
+            clearConfigForm('No installed extensions found.');
+            document.getElementById('editorTitle').textContent = 'Settings';
+        }
+    }
+
+    function collectPlayerManagementSettings() {
+        const wordsRaw = document.getElementById('pmWords').value || '';
+        const words = wordsRaw
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(Boolean);
+
+        const minutesRaw = Number(document.getElementById('pmMinutes').value || 0);
+        const minutes = Number.isFinite(minutesRaw) ? Math.max(0, Math.min(43200, Math.floor(minutesRaw))) : 15;
+
+        return {
+            badWordFilter: {
+                enabled: document.getElementById('pmEnabled').checked,
+                words,
+                autoMuteMinutes: minutes,
+                autoMuteReason: (document.getElementById('pmReason').value || 'Inappropriate language').trim() || 'Inappropriate language',
+                cancelMessage: document.getElementById('pmCancel').checked
+            }
+        };
+    }
+
+    function parseGenericValue(type, value) {
+        if (type === 'number') {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+        if (type === 'boolean') {
+            const normalized = String(value || '').trim().toLowerCase();
+            return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+        }
+        return String(value == null ? '' : value);
+    }
+
+    function escapeHtmlAttribute(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function collectGenericSettings() {
+        const result = {};
+        document.querySelectorAll('#kvList .kv-row').forEach(row => {
+            const key = (row.querySelector('.kv-key').value || '').trim();
+            if (!key) {
+                return;
+            }
+            const type = row.querySelector('.kv-type').value || 'string';
+            const rawValue = row.querySelector('.kv-value').value || '';
+            result[key] = parseGenericValue(type, rawValue);
+        });
+        return result;
+    }
+
+    function collectSettingsFromForm() {
+        if (selectedExtensionId === 'player-management') {
+            return collectPlayerManagementSettings();
+        }
+        return collectGenericSettings();
+    }
+
+    async function saveCurrentSettings() {
+        if (!selectedExtensionId) {
+            setStatus('Select an extension first.', true);
+            return;
+        }
+
+        const settings = collectSettingsFromForm();
+
+        await api(`/api/extensions/config/${encodeURIComponent(selectedExtensionId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings })
+        });
+
+        selectedSettings = settings;
+        setStatus(`Saved settings for ${selectedExtensionId}.`, false);
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+        try {
+            await saveCurrentSettings();
+        } catch (error) {
+            setStatus(error.message || 'Could not save extension settings.', true);
+        }
+    });
+
+    document.getElementById('reloadBtn').addEventListener('click', async () => {
+        try {
+            await loadExtensions();
+            setStatus('Reloaded extension settings.', false);
+        } catch (error) {
+            setStatus(error.message || 'Could not reload extension settings.', true);
+        }
+    });
+
+    document.getElementById('addFieldBtn').addEventListener('click', () => {
+        if (!selectedExtensionId) {
+            setStatus('Select an extension first.', true);
+            return;
+        }
+
+        if (selectedExtensionId === 'player-management') {
+            setStatus('Player management uses dedicated fields.', true);
+            return;
+        }
+
+        addGenericFieldRow('', '', 'string');
+        setStatus('Added new field row.', false);
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadExtensions();
+        } catch (error) {
+            if (error && error.status === 401) {
+                window.location.href = '/';
+                return;
+            }
+            setStatus(error && error.message ? error.message : 'Could not load extension config page.', true);
+        }
+    })();
+</script>
+</body>
+</html>
+

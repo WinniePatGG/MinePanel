@@ -1,0 +1,20 @@
+name: MinePanel
+version: '${version}'
+main: de.winniepat.minePanel.MinePanel
+api-version: '1.21'
+authors: [ WinniePatGG ]
+website: https://winniepat.de
+description: MinePanel with secure auth, user roles, and log history.
+folia-supported: true
+
+
+permissions:
+  minepanel.report:
+    description: Allows players to create reports via /report.
+    default: true
+  minepanel.ticket:
+    description: Allows players to create support tickets via /ticket.
+    default: true
+  minepanel.chatfilter.bypass:
+    description: Bypasses MinePanel bad-word chat filter auto moderation.
+    default: op

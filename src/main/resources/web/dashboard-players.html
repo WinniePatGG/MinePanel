@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Players</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link active" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Players</h1>
+        <p>All players that ever joined: <span id="playerCount">0</span></p>
+
+        <section class="players-layout spaced-top">
+            <div class="card">
+                <div class="card-head">
+                    <h2>Player List</h2>
+                    <input id="playerSearch" class="player-search" placeholder="Search player">
+                </div>
+                <ul id="playerDirectory" class="player-directory"></ul>
+            </div>
+
+            <div class="card profile-card">
+                <h2>Player Profile</h2>
+                <div id="profileEmpty" class="player-empty">Select a player from the list.</div>
+                <div id="profileContent" class="profile-pane" style="display:none;">
+                    <div class="profile-header">
+                        <img id="profileAvatar" class="profile-avatar" alt="Player skin face">
+                        <div>
+                            <div class="profile-name-row">
+                                <span id="profileName" class="profile-name"></span>
+                                <span id="profileStatusDot" class="status-dot"></span>
+                                <span id="profileStatusText" class="profile-status"></span>
+                            </div>
+                            <div id="profileUuid" class="profile-uuid"></div>
+                            <div id="profileMuteState" class="profile-uuid" style="margin-top:6px;">Mute: -</div>
+                        </div>
+                    </div>
+
+                    <div class="profile-grid">
+                        <div class="profile-field"><span>First joined</span><strong id="profileFirstJoined">-</strong></div>
+                        <div class="profile-field"><span>Last seen</span><strong id="profileLastSeen">-</strong></div>
+                        <div class="profile-field"><span>Total playtime</span><strong id="profilePlaytime">-</strong></div>
+                        <div class="profile-field"><span>Total sessions</span><strong id="profileSessions">-</strong></div>
+                        <div class="profile-field"><span>IP Address</span><strong id="profileIp">-</strong></div>
+                        <div class="profile-field"><span>Country</span><strong id="profileCountry">-</strong></div>
+                    </div>
+
+                    <div id="playerStatsSection" class="card spaced-top" style="display:none;padding:12px;">
+                        <h3 style="margin:0 0 8px;">Player Stats</h3>
+                        <div class="profile-grid">
+                            <div class="profile-field"><span>Kills</span><strong id="statsKills">-</strong></div>
+                            <div class="profile-field"><span>Deaths</span><strong id="statsDeaths">-</strong></div>
+                            <div class="profile-field"><span>Money</span><strong id="statsMoney">-</strong></div>
+                            <div class="profile-field"><span>Economy Provider</span><strong id="statsEconomyProvider">-</strong></div>
+                        </div>
+                    </div>
+
+                    <div id="luckPermsSection" class="card spaced-top" style="display:none;padding:12px;">
+                        <h3 style="margin:0 0 8px;">LuckPerms</h3>
+                        <div class="profile-grid">
+                            <div class="profile-field"><span>Primary Group</span><strong id="lpPrimaryGroup">-</strong></div>
+                            <div class="profile-field"><span>Prefix / Suffix</span><strong id="lpPrefixSuffix">-</strong></div>
+                        </div>
+                        <div class="profile-field spaced-top"><span>Groups</span><strong id="lpGroups">-</strong></div>
+                        <div class="profile-field spaced-top"><span>Permissions</span><strong id="lpPermissionsMeta">-</strong></div>
+                        <pre id="lpPermissions" class="log-rectangle" style="height:180px;margin-top:8px;"></pre>
+                    </div>
+
+                    <div id="playerManagementActions" class="spaced-top" style="display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+                        <input id="actionReason" placeholder="Reason for action" style="grid-column:1 / -1;">
+                        <input id="actionDuration" type="number" min="1" value="60" placeholder="Duration (minutes)">
+                        <button id="kickButton" class="secondary">Kick</button>
+                        <button id="tempBanButton">Temp Ban</button>
+                        <button id="banButton">Ban</button>
+                        <button id="unbanButton" class="secondary">Unban</button>
+                        <button id="muteButton">Mute</button>
+                        <button id="unmuteButton" class="secondary">Unmute</button>
+                    </div>
+
+                    <div id="airstrikeActions" class="spaced-top" style="display:none;grid-template-columns:180px minmax(0,1fr);gap:8px;align-items:center;">
+                        <button id="airstrikeButton" class="danger-button">Airstrike</button>
+                        <input id="airstrikeAmount" type="number" min="1" max="20000" step="1" value="5000" placeholder="TNT amount">
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const expanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', expanded);
+                toggle.classList.toggle('expanded', expanded);
+                savedState[category] = expanded;
+                persistState();
+            });
+        });
+    }
+
+    let allPlayers = [];
+    let selectedUuid = null;
+    let playerManagementAvailable = false;
+    let luckPermsAvailable = false;
+    let playerStatsAvailable = false;
+    let airstrikeAvailable = false;
+    let mePermissions = [];
+    let selectedProfileRequestId = 0;
+    const avatarCache = new Map();
+
+    function isCurrentProfileRequest(uuid, requestId) {
+        return selectedUuid === uuid && selectedProfileRequestId === requestId;
+    }
+
+    async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+        mePermissions = Array.isArray(data.user.permissions) ? data.user.permissions : [];
+    }
+
+    function hasPermission(permissionName) {
+        return mePermissions.includes(permissionName);
+    }
+
+    async function detectPlayerManagementExtension() {
+        try {
+            const response = await fetch('/api/extensions/player-management/mute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await response.json();
+            playerManagementAvailable = data.error !== 'not_found';
+        } catch {
+            playerManagementAvailable = false;
+        }
+
+        const actions = document.getElementById('playerManagementActions');
+        actions.style.display = playerManagementAvailable ? 'grid' : 'none';
+    }
+
+    async function detectLuckPermsExtension() {
+        const section = document.getElementById('luckPermsSection');
+        luckPermsAvailable = false;
+        section.style.display = 'none';
+
+        try {
+            const probeUuid = selectedUuid || (allPlayers.length > 0 ? allPlayers[0].uuid : null);
+            if (!probeUuid) {
+                return;
+            }
+
+            const data = await api(`/api/extensions/luckperms/player/${encodeURIComponent(probeUuid)}`);
+            luckPermsAvailable = data.available === true;
+        } catch {
+            luckPermsAvailable = false;
+        }
+
+        section.style.display = luckPermsAvailable ? 'block' : 'none';
+    }
+
+    async function detectPlayerStatsExtension() {
+        const section = document.getElementById('playerStatsSection');
+        playerStatsAvailable = false;
+        section.style.display = 'none';
+
+        try {
+            const probeUuid = selectedUuid || (allPlayers.length > 0 ? allPlayers[0].uuid : null);
+            if (!probeUuid) {
+                return;
+            }
+
+            const data = await api(`/api/extensions/player-stats/player/${encodeURIComponent(probeUuid)}`);
+            playerStatsAvailable = data.available === true;
+        } catch {
+            playerStatsAvailable = false;
+        }
+
+        section.style.display = playerStatsAvailable ? 'block' : 'none';
+    }
+
+    async function detectAirstrikeExtension() {
+        const actions = document.getElementById('airstrikeActions');
+        airstrikeAvailable = false;
+        actions.style.display = 'none';
+
+        if (!hasPermission('MANAGE_AIRSTRIKE')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/extensions/airstrike/launch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await response.json();
+            airstrikeAvailable = data.error !== 'not_found';
+        } catch {
+            airstrikeAvailable = false;
+        }
+
+        actions.style.display = airstrikeAvailable ? 'block' : 'none';
+    }
+
+    function formatDate(timestamp) {
+        if (!timestamp || Number(timestamp) <= 0) {
+            return '-';
+        }
+        return new Date(Number(timestamp)).toLocaleString();
+    }
+
+    function formatPlaytime(seconds) {
+        const safe = Math.max(0, Number(seconds) || 0);
+        const days = Math.floor(safe / 86400);
+        const hours = Math.floor((safe % 86400) / 3600);
+        const minutes = Math.floor((safe % 3600) / 60);
+        const sec = Math.floor(safe % 60);
+
+        const parts = [];
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0 || days > 0) parts.push(`${hours}h`);
+        if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+        parts.push(`${sec}s`);
+        return parts.join(' ');
+    }
+
+    function applyAvatar(img, uuid, username, requestId) {
+        img.dataset.avatarUuid = uuid;
+        img.dataset.avatarRequestId = String(requestId);
+        delete img.dataset.fallbackTried;
+
+        const cached = avatarCache.get(uuid);
+        if (cached) {
+            img.onerror = null;
+            img.onload = null;
+            img.src = cached;
+            return;
+        }
+
+        img.referrerPolicy = 'no-referrer';
+        img.alt = `${username} skin face`;
+
+        function avatarRequestStillCurrent() {
+            return img.dataset.avatarUuid === uuid
+                && img.dataset.avatarRequestId === String(requestId)
+                && isCurrentProfileRequest(uuid, requestId);
+        }
+
+        img.src = `https://crafatar.com/avatars/${uuid}?size=48&overlay`;
+        img.onerror = () => {
+            if (!avatarRequestStillCurrent()) {
+                return;
+            }
+
+            if (!img.dataset.fallbackTried) {
+                img.dataset.fallbackTried = '1';
+                img.src = `https://mc-heads.net/avatar/${encodeURIComponent(username)}/48`;
+                return;
+            }
+
+            img.onerror = null;
+            img.onload = null;
+            img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="%23131f38"/><text x="24" y="30" text-anchor="middle" font-family="Arial" font-size="18" fill="%23a9bbdf">?</text></svg>';
+        };
+        img.onload = () => {
+            if (!avatarRequestStillCurrent()) {
+                return;
+            }
+
+            const currentSource = img.currentSrc || img.src || '';
+            if (currentSource.startsWith('http')) {
+                avatarCache.set(uuid, currentSource);
+            }
+        };
+    }
+
+    async function loadPlayerList() {
+        const data = await api('/api/players');
+        allPlayers = Array.isArray(data.allPlayers) ? data.allPlayers : [];
+        document.getElementById('playerCount').textContent = String(allPlayers.length);
+        renderPlayerDirectory();
+
+        if (selectedUuid) {
+            const stillExists = allPlayers.some(player => player.uuid === selectedUuid);
+            if (stillExists) {
+                await loadPlayerProfile(selectedUuid);
+            }
+        }
+    }
+
+    function renderPlayerDirectory() {
+        const search = document.getElementById('playerSearch').value.trim().toLowerCase();
+        const list = document.getElementById('playerDirectory');
+        list.innerHTML = '';
+
+        const filtered = allPlayers.filter(player => {
+            if (!search) return true;
+            return `${player.username} ${player.uuid}`.toLowerCase().includes(search);
+        });
+
+        if (filtered.length === 0) {
+            const empty = document.createElement('li');
+            empty.className = 'player-empty';
+            empty.textContent = 'No players found';
+            list.appendChild(empty);
+            return;
+        }
+
+        filtered.forEach(player => {
+            const item = document.createElement('li');
+            item.className = `directory-item${player.uuid === selectedUuid ? ' active' : ''}`;
+
+            const dot = document.createElement('span');
+            dot.className = `status-dot ${player.online ? 'online' : 'offline'}`;
+
+            const name = document.createElement('span');
+            name.className = 'directory-name';
+            name.textContent = player.username;
+
+            item.appendChild(dot);
+            item.appendChild(name);
+            item.addEventListener('click', async () => {
+                selectedUuid = player.uuid;
+                renderPlayerDirectory();
+                await loadPlayerProfile(player.uuid);
+            });
+            list.appendChild(item);
+        });
+    }
+
+    async function loadMuteState(uuid, requestId) {
+        const muteState = document.getElementById('profileMuteState');
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
+        if (!playerManagementAvailable) {
+            muteState.textContent = 'Mute: extension not installed';
+            return;
+        }
+
+        muteState.textContent = 'Mute: -';
+        try {
+            const data = await api(`/api/extensions/player-management/mute/${encodeURIComponent(uuid)}`);
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+
+            if (!data.muted) {
+                muteState.textContent = 'Mute: not muted';
+                return;
+            }
+
+            if (data.expiresAt) {
+                muteState.textContent = `Mute: active until ${new Date(Number(data.expiresAt)).toLocaleString()} (${data.reason || 'No reason'})`;
+            } else {
+                muteState.textContent = `Mute: active permanently (${data.reason || 'No reason'})`;
+            }
+        } catch {
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+            muteState.textContent = 'Mute: unavailable';
+        }
+    }
+
+    async function loadPlayerProfile(uuid) {
+        const requestId = ++selectedProfileRequestId;
+        const data = await api(`/api/players/profile/${encodeURIComponent(uuid)}`);
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
+        const profile = data.profile;
+
+        document.getElementById('profileEmpty').style.display = 'none';
+        document.getElementById('profileContent').style.display = 'block';
+
+        document.getElementById('profileName').textContent = profile.username || 'Unknown';
+        document.getElementById('profileUuid').textContent = profile.uuid || '-';
+
+        const statusDot = document.getElementById('profileStatusDot');
+        statusDot.className = `status-dot ${profile.online ? 'online' : 'offline'}`;
+        document.getElementById('profileStatusText').textContent = profile.online ? 'Online' : 'Offline';
+
+        document.getElementById('profileFirstJoined').textContent = formatDate(profile.firstJoined);
+        document.getElementById('profileLastSeen').textContent = formatDate(profile.lastSeen);
+        document.getElementById('profilePlaytime').textContent = formatPlaytime(profile.totalPlaytimeSeconds);
+        document.getElementById('profileSessions').textContent = String(profile.totalSessions ?? 0);
+        document.getElementById('profileIp').textContent = profile.lastIp || '-';
+        document.getElementById('profileCountry').textContent = profile.country || 'Unknown';
+
+        applyAvatar(document.getElementById('profileAvatar'), profile.uuid, profile.username, requestId);
+        await loadMuteState(profile.uuid, requestId);
+        await loadPlayerStats(profile.uuid, requestId);
+        await loadLuckPermsState(profile.uuid, requestId);
+    }
+
+    async function loadPlayerStats(uuid, requestId) {
+        const section = document.getElementById('playerStatsSection');
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
+        if (!playerStatsAvailable) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        document.getElementById('statsKills').textContent = '-';
+        document.getElementById('statsDeaths').textContent = '-';
+        document.getElementById('statsMoney').textContent = '-';
+        document.getElementById('statsEconomyProvider').textContent = '-';
+
+        try {
+            const data = await api(`/api/extensions/player-stats/player/${encodeURIComponent(uuid)}`);
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+
+            if (!data.available) {
+                section.style.display = 'none';
+                return;
+            }
+
+            document.getElementById('statsKills').textContent = String(data.kills ?? 0);
+            document.getElementById('statsDeaths').textContent = String(data.deaths ?? 0);
+
+            if (data.economyAvailable) {
+                document.getElementById('statsMoney').textContent = data.balanceFormatted || '-';
+                document.getElementById('statsEconomyProvider').textContent = data.economyProvider || '-';
+            } else {
+                document.getElementById('statsMoney').textContent = 'Economy not available';
+                document.getElementById('statsEconomyProvider').textContent = '-';
+            }
+        } catch {
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+            section.style.display = 'none';
+        }
+    }
+
+    async function loadLuckPermsState(uuid, requestId) {
+        const section = document.getElementById('luckPermsSection');
+        if (!isCurrentProfileRequest(uuid, requestId)) {
+            return;
+        }
+
+        if (!luckPermsAvailable) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        document.getElementById('lpPrimaryGroup').textContent = '-';
+        document.getElementById('lpPrefixSuffix').textContent = '-';
+        document.getElementById('lpGroups').textContent = '-';
+        document.getElementById('lpPermissionsMeta').textContent = 'Loading...';
+        document.getElementById('lpPermissions').textContent = '';
+
+        try {
+            const data = await api(`/api/extensions/luckperms/player/${encodeURIComponent(uuid)}`);
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+
+            if (!data.available) {
+                section.style.display = 'none';
+                return;
+            }
+
+            const groups = Array.isArray(data.groups) ? data.groups : [];
+            const permissions = Array.isArray(data.permissions) ? data.permissions : [];
+
+            document.getElementById('lpPrimaryGroup').textContent = data.primaryGroup || '-';
+            document.getElementById('lpPrefixSuffix').textContent = `${data.prefix || '-'} / ${data.suffix || '-'}`;
+            document.getElementById('lpGroups').textContent = groups.length > 0 ? groups.join(', ') : '-';
+
+            const totalPermissions = Number(data.permissionsCount) || permissions.length;
+            const truncated = data.permissionsTruncated === true;
+            document.getElementById('lpPermissionsMeta').textContent = truncated
+                ? `${permissions.length} shown of ${totalPermissions}`
+                : `${totalPermissions} permission(s)`;
+            document.getElementById('lpPermissions').textContent = permissions.length > 0
+                ? permissions.join('\n')
+                : 'No granted permissions';
+        } catch {
+            if (!isCurrentProfileRequest(uuid, requestId)) {
+                return;
+            }
+            section.style.display = 'none';
+        }
+    }
+
+    function selectedPlayerName() {
+        if (!selectedUuid) return '';
+        const player = allPlayers.find(x => x.uuid === selectedUuid);
+        return player ? player.username : '';
+    }
+
+    function actionReason(defaultValue) {
+        const raw = document.getElementById('actionReason').value.trim();
+        return raw || defaultValue;
+    }
+
+    function actionDuration() {
+        const parsed = Number(document.getElementById('actionDuration').value);
+        if (!Number.isFinite(parsed)) return 60;
+        return Math.max(1, Math.min(43200, Math.round(parsed)));
+    }
+
+    function actionTntAmount() {
+        const parsed = Number(document.getElementById('airstrikeAmount').value);
+        if (!Number.isFinite(parsed)) return 5000;
+        return Math.max(1, Math.min(20000, Math.round(parsed)));
+    }
+
+    async function runPlayerAction(handler) {
+        if (!selectedUuid) {
+            alert('Select a player first.');
+            return;
+        }
+        await handler();
+        await loadPlayerList();
+        await loadPlayerProfile(selectedUuid);
+    }
+
+    document.getElementById('kickButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api(`/api/players/${encodeURIComponent(selectedUuid)}/kick`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: actionReason('Kicked by panel moderator') })
+            });
+        });
+    });
+
+    document.getElementById('tempBanButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api(`/api/players/${encodeURIComponent(selectedUuid)}/temp-ban`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: selectedPlayerName(),
+                    durationMinutes: actionDuration(),
+                    reason: actionReason('Temporarily banned by panel moderator')
+                })
+            });
+        });
+    });
+
+    document.getElementById('banButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/players/ban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uuid: selectedUuid,
+                    username: selectedPlayerName(),
+                    reason: actionReason('Banned by panel moderator')
+                })
+            });
+        });
+    });
+
+    document.getElementById('unbanButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/players/unban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid: selectedUuid, username: selectedPlayerName() })
+            });
+        });
+    });
+
+    document.getElementById('muteButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/extensions/player-management/mute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uuid: selectedUuid,
+                    username: selectedPlayerName(),
+                    durationMinutes: actionDuration(),
+                    reason: actionReason('Muted by panel moderator')
+                })
+            });
+        });
+    });
+
+    document.getElementById('unmuteButton').addEventListener('click', async () => {
+        await runPlayerAction(async () => {
+            await api('/api/extensions/player-management/unmute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid: selectedUuid, username: selectedPlayerName() })
+            });
+        });
+    });
+
+    document.getElementById('airstrikeButton').addEventListener('click', async () => {
+        if (!airstrikeAvailable) {
+            alert('Airstrike extension is not available.');
+            return;
+        }
+
+        await runPlayerAction(async () => {
+            await api('/api/extensions/airstrike/launch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uuid: selectedUuid,
+                    username: selectedPlayerName(),
+                    amount: actionTntAmount()
+                })
+            });
+        });
+    });
+
+    document.getElementById('playerSearch').addEventListener('input', renderPlayerDirectory);
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await Promise.all([loadMe(), detectPlayerManagementExtension(), loadPlayerList()]);
+            await detectPlayerStatsExtension();
+            await detectLuckPermsExtension();
+            await detectAirstrikeExtension();
+            if (allPlayers.length > 0) {
+                selectedUuid = allPlayers[0].uuid;
+                renderPlayerDirectory();
+                await loadPlayerProfile(selectedUuid);
+            }
+            setInterval(() => {
+                loadPlayerList().catch(() => {});
+            }, 5000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>

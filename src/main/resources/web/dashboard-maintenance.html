@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Maintenance</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+    <style>
+        .maintenance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        .maintenance-stat {
+            border: 1px solid var(--card-border);
+            background: var(--panel-bg);
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .maintenance-stat-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted-text);
+            margin-bottom: 6px;
+        }
+
+        .maintenance-stat-value {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .maintenance-online {
+            color: #8af0b4;
+        }
+
+        .maintenance-offline {
+            color: #ff9ca1;
+        }
+
+        .maintenance-reason {
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            padding: 10px 11px;
+            font-size: 14px;
+            font-family: inherit;
+            line-height: 1.4;
+            min-height: 84px;
+            resize: vertical;
+        }
+
+        .maintenance-reason:focus {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: 1px;
+        }
+
+        .maintenance-motd {
+            margin-top: 8px;
+        }
+
+        .maintenance-note {
+            margin-top: 10px;
+            font-size: 13px;
+            color: var(--muted-text);
+        }
+
+        .maintenance-message {
+            margin-top: 12px;
+            padding: 9px 11px;
+            border-radius: 8px;
+            border: 1px solid var(--table-row-border);
+            background: var(--panel-bg);
+            display: none;
+        }
+
+        .maintenance-message.error {
+            border-color: rgba(231, 76, 60, 0.45);
+            background: rgba(231, 76, 60, 0.14);
+            color: #ffc7c1;
+        }
+
+        .maintenance-message.success {
+            border-color: rgba(46, 204, 113, 0.45);
+            background: rgba(46, 204, 113, 0.14);
+            color: #b9f8cf;
+        }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link" href="/dashboard/extensions">Extensions</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Maintenance</h1>
+        <p>Enable maintenance mode, block non-staff joins, and remove non-staff players currently online.</p>
+
+        <section class="card">
+            <h2>Status</h2>
+            <div class="maintenance-grid">
+                <div class="maintenance-stat">
+                    <div class="maintenance-stat-title">State</div>
+                    <div id="stateValue" class="maintenance-stat-value">Unknown</div>
+                </div>
+                <div class="maintenance-stat">
+                    <div class="maintenance-stat-title">Affected Players</div>
+                    <div id="affectedValue" class="maintenance-stat-value">0</div>
+                </div>
+                <div class="maintenance-stat">
+                    <div class="maintenance-stat-title">Last Changed</div>
+                    <div id="changedValue" class="maintenance-stat-value">-</div>
+                </div>
+                <div class="maintenance-stat">
+                    <div class="maintenance-stat-title">Bypass Permission</div>
+                    <div id="bypassValue" class="maintenance-stat-value">minepanel.maintenance.bypass</div>
+                </div>
+            </div>
+            <p class="maintenance-note">Operators and players with bypass permission can still join.</p>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Controls</h2>
+            <label for="reasonInput">Maintenance reason</label>
+            <textarea id="reasonInput" class="maintenance-reason" placeholder="Server maintenance in progress"></textarea>
+            <label class="maintenance-motd" for="motdInput">Maintenance MOTD</label>
+            <input id="motdInput" type="text" placeholder="Maintenance mode is active">
+            <div class="toolbar">
+                <button id="enableKickBtn">Enable + Kick Non-Staff</button>
+                <button id="enableBtn" class="secondary">Enable Only</button>
+                <button id="disableBtn" class="danger">Disable</button>
+                <button id="kickBtn" class="secondary">Kick Non-Staff Now</button>
+                <button id="refreshBtn" class="secondary">Refresh</button>
+            </div>
+            <div id="message" class="maintenance-message"></div>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const nextExpanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', nextExpanded);
+                toggle.classList.toggle('expanded', nextExpanded);
+                savedState[category] = nextExpanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || 'Request failed');
+        }
+        return payload;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function setMessage(message, kind) {
+        const messageElement = document.getElementById('message');
+        messageElement.textContent = message || '';
+        messageElement.className = 'maintenance-message';
+        if (!message) {
+            messageElement.style.display = 'none';
+            return;
+        }
+
+        if (kind === 'error') {
+            messageElement.classList.add('error');
+        } else {
+            messageElement.classList.add('success');
+        }
+        messageElement.style.display = 'block';
+    }
+
+    function applyStatus(status) {
+        const stateElement = document.getElementById('stateValue');
+        const enabled = status.enabled === true;
+        stateElement.textContent = enabled ? 'Enabled' : 'Disabled';
+        stateElement.classList.toggle('maintenance-online', enabled);
+        stateElement.classList.toggle('maintenance-offline', !enabled);
+
+        document.getElementById('affectedValue').textContent = String(status.affectedOnlinePlayers || 0);
+        document.getElementById('bypassValue').textContent = status.bypassPermission || 'minepanel.maintenance.bypass';
+
+        const changedBy = status.changedBy || 'SYSTEM';
+        const changedAt = Number(status.changedAt || 0);
+        const changedText = changedAt > 0 ? `${new Date(changedAt).toLocaleString()} by ${changedBy}` : `- by ${changedBy}`;
+        document.getElementById('changedValue').textContent = changedText;
+
+        const reasonInput = document.getElementById('reasonInput');
+        if (typeof status.reason === 'string' && status.reason.length > 0) {
+            reasonInput.value = status.reason;
+        }
+
+        const motdInput = document.getElementById('motdInput');
+        if (typeof status.motd === 'string' && status.motd.length > 0) {
+            motdInput.value = status.motd;
+        }
+    }
+
+    async function refreshStatus() {
+        const status = await api('/api/extensions/maintenance/status');
+        applyStatus(status);
+    }
+
+    async function toggleMaintenance(enable, kickNonStaff) {
+        const reason = document.getElementById('reasonInput').value.trim();
+        const motd = document.getElementById('motdInput').value.trim();
+        const endpoint = enable ? '/api/extensions/maintenance/enable' : '/api/extensions/maintenance/disable';
+        const body = enable ? { reason, motd, kickNonStaff: kickNonStaff === true } : {};
+
+        const result = await api(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        applyStatus(result);
+        const kickedPart = Number(result.kicked || 0) > 0 ? ` Kicked ${result.kicked} player(s).` : '';
+        setMessage(enable ? `Maintenance enabled.${kickedPart}` : 'Maintenance disabled.', 'success');
+    }
+
+    async function kickNonStaffNow() {
+        const result = await api('/api/extensions/maintenance/kick-nonstaff', { method: 'POST' });
+        applyStatus(result);
+        setMessage(`Kicked ${result.kicked || 0} player(s).`, 'success');
+    }
+
+    document.getElementById('enableKickBtn').addEventListener('click', async () => {
+        try {
+            await toggleMaintenance(true, true);
+        } catch (error) {
+            setMessage(error.message || 'Could not enable maintenance.', 'error');
+        }
+    });
+
+    document.getElementById('enableBtn').addEventListener('click', async () => {
+        try {
+            await toggleMaintenance(true, false);
+        } catch (error) {
+            setMessage(error.message || 'Could not enable maintenance.', 'error');
+        }
+    });
+
+    document.getElementById('disableBtn').addEventListener('click', async () => {
+        try {
+            await toggleMaintenance(false, false);
+        } catch (error) {
+            setMessage(error.message || 'Could not disable maintenance.', 'error');
+        }
+    });
+
+    document.getElementById('kickBtn').addEventListener('click', async () => {
+        try {
+            await kickNonStaffNow();
+        } catch (error) {
+            setMessage(error.message || 'Could not kick players.', 'error');
+        }
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+        try {
+            await refreshStatus();
+            setMessage('', 'success');
+        } catch (error) {
+            setMessage(error.message || 'Could not refresh status.', 'error');
+        }
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await refreshStatus();
+            setInterval(() => {
+                refreshStatus().catch(() => {});
+            }, 3000);
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

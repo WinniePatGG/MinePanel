@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MinePanel Dashboard - Extensions</title>
+    <link rel="stylesheet" href="/panel.css">
+    <script src="/theme.js"></script>
+    <style>
+        .ext-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            border-bottom: 1px solid transparent;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .ext-link:hover {
+            color: #9ec0ff;
+            border-bottom-color: #9ec0ff;
+        }
+
+        .ext-download {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 7px;
+            border: 1px solid var(--button-border);
+            background: var(--button-bg);
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 13px;
+            line-height: 1;
+            transition: background 0.15s ease;
+        }
+
+        .ext-download:hover {
+            background: var(--button-hover-bg);
+        }
+
+        .ext-status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--table-row-border);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .ext-status-up {
+            color: #8af0b4;
+            background: rgba(46, 204, 113, 0.18);
+            border-color: rgba(46, 204, 113, 0.5);
+        }
+
+        .ext-status-outdated {
+            color: #ffe08b;
+            background: rgba(241, 196, 15, 0.18);
+            border-color: rgba(241, 196, 15, 0.5);
+        }
+
+        .ext-status-unknown {
+            color: #c7d1ea;
+            background: rgba(127, 140, 170, 0.18);
+            border-color: rgba(127, 140, 170, 0.5);
+        }
+
+        .ext-status-restart {
+            color: #9ec0ff;
+            background: rgba(81, 125, 255, 0.2);
+            border-color: rgba(81, 125, 255, 0.45);
+        }
+
+        .ext-status-installed {
+            color: #8af0b4;
+            background: rgba(46, 204, 113, 0.18);
+            border-color: rgba(46, 204, 113, 0.5);
+        }
+
+        .ext-warning {
+            margin: 10px 0 0;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(241, 196, 15, 0.45);
+            background: rgba(241, 196, 15, 0.14);
+            color: #ffe08b;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">MinePanel</div>
+        <div id="me" class="sidebar-meta"></div>
+        <nav class="side-nav">
+            <a class="side-link" href="/dashboard/overview">Overview</a>
+            <button class="side-category-toggle" data-category="server" type="button">Server</button>
+            <div class="side-category-items" data-category-items="server">
+                <a class="side-link" href="/console">Console</a>
+                <a class="side-link" href="/dashboard/resources">Resources</a>
+                <a class="side-link" href="/dashboard/players">Players</a>
+                <a class="side-link" href="/dashboard/bans">Bans</a>
+                <a class="side-link" href="/dashboard/plugins">Plugins</a>
+            </div>
+            <button class="side-category-toggle" data-category="panel" type="button">Panel</button>
+            <div class="side-category-items" data-category-items="panel">
+                <a class="side-link" href="/dashboard/users">Users</a>
+                <a class="side-link" href="/dashboard/discord-webhook">Discord Webhook</a>
+                <a class="side-link" href="/dashboard/themes">Themes</a>
+                <a class="side-link active" href="/dashboard/extensions">Extensions</a>
+            </div>
+        </nav>
+        <button id="logout" class="secondary sidebar-logout">Logout</button>
+    </aside>
+
+    <main class="content-area">
+        <h1>Extensions</h1>
+        <p>Shows loaded extensions and extension downloads from the latest GitHub release/pre-release.</p>
+        <div id="extensionsWarning" class="ext-warning" style="display:none;"></div>
+        <div id="extensionsInstallMessage" class="ext-warning" style="display:none;"></div>
+
+        <div class="toolbar">
+            <select id="releaseChannel" style="width:auto;min-width:180px;">
+                <option value="release">Release</option>
+                <option value="prerelease">Pre-release</option>
+            </select>
+            <button id="reloadExtensions" class="secondary">Reload Extensions</button>
+            <button id="refresh" class="secondary">Refresh</button>
+        </div>
+
+        <section class="card">
+            <h2>Installed Extensions (<span id="installedCount">0</span>)</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody id="installedBody"></tbody>
+            </table>
+        </section>
+
+        <section class="card spaced-top">
+            <h2>Available Extensions on GitHub (<span id="availableExtensionCount">0</span>)</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Release</th>
+                    <th>Download</th>
+                </tr>
+                </thead>
+                <tbody id="availableExtensionsBody"></tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+    function initSidebarCategories() {
+        const storageKey = 'minepanel.sidebar.categories';
+        let savedState = {};
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+        } catch (ignored) {
+            savedState = {};
+        }
+
+        function persistState() {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify(savedState));
+            } catch (ignored) {
+                // Ignore unavailable sessionStorage.
+            }
+        }
+
+        document.querySelectorAll('.side-category-toggle').forEach(toggle => {
+            const category = toggle.dataset.category;
+            const items = document.querySelector(`.side-category-items[data-category-items="${category}"]`);
+            if (!items || !category) return;
+
+            const expanded = savedState[category] === true;
+            items.classList.toggle('expanded', expanded);
+            toggle.classList.toggle('expanded', expanded);
+
+            toggle.addEventListener('click', () => {
+                const nextExpanded = !items.classList.contains('expanded');
+                items.classList.toggle('expanded', nextExpanded);
+                toggle.classList.toggle('expanded', nextExpanded);
+                savedState[category] = nextExpanded;
+                persistState();
+            });
+        });
+    }
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || 'Request failed');
+        }
+        return payload;
+    }
+
+    async function loadMe() {
+        const data = await api('/api/me');
+        document.getElementById('me').textContent = `Logged in as ${data.user.username} (${data.user.role})`;
+    }
+
+    function renderInstalled(installed) {
+        const body = document.getElementById('installedBody');
+        body.innerHTML = '';
+
+        if (!Array.isArray(installed) || installed.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4">No extensions loaded</td>';
+            body.appendChild(row);
+            return;
+        }
+
+        for (const extension of installed) {
+            const row = document.createElement('tr');
+            const status = extension.status || 'unknown';
+            const statusText = extension.statusText || 'Unknown';
+            const statusClass = status === 'outdated'
+                ? 'ext-status ext-status-outdated'
+                : (status === 'up_to_date' ? 'ext-status ext-status-up' : 'ext-status ext-status-unknown');
+            const statusMarkup = `<span class="${statusClass}">${statusText}</span>`;
+
+            row.innerHTML = `
+                <td>${extension.id}</td>
+                <td>${extension.displayName}</td>
+                <td>${extension.source}</td>
+                <td>${statusMarkup}</td>
+            `;
+            body.appendChild(row);
+        }
+    }
+
+    function installStateBadge(state) {
+        if (state === 'restart_required') {
+            return '<span class="ext-status ext-status-restart">Restart required</span>';
+        }
+        if (state === 'installed') {
+            return '<span class="ext-status ext-status-installed">Installed</span>';
+        }
+        return '';
+    }
+
+    function renderAvailableExtensions(availableExtensions) {
+        const body = document.getElementById('availableExtensionsBody');
+        body.innerHTML = '';
+
+        if (!Array.isArray(availableExtensions) || availableExtensions.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4">No MinePanel extension assets found on GitHub releases</td>';
+            body.appendChild(row);
+            return;
+        }
+
+        for (const extension of availableExtensions) {
+            const name = extension.name || extension.id || 'Unknown';
+            const description = extension.description || '-';
+            const release = extension.release || '-';
+            const projectUrl = extension.projectUrl || '#';
+            const extensionId = extension.extensionId || '';
+            const fileName = extension.id || '';
+            const installState = extension.installState || 'not_installed';
+            const prereleaseSuffix = extension.prerelease ? ' (pre-release)' : '';
+            const actionMarkup = installState === 'restart_required'
+                ? '<span class="ext-status ext-status-restart">Restart required</span>'
+                : (installState === 'installed'
+                    ? '<span class="ext-status ext-status-installed">Installed</span>'
+                    : `<button class="ext-download" data-install-extension="${extensionId}" data-install-file="${fileName}">Install</button>`);
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><a class="ext-link" href="${projectUrl}" target="_blank" rel="noopener noreferrer">${name}</a></td>
+                <td>${description}</td>
+                <td>${release}${prereleaseSuffix}</td>
+                <td>${actionMarkup}</td>
+            `;
+            body.appendChild(row);
+        }
+
+        body.querySelectorAll('button[data-install-extension]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const channel = document.getElementById('releaseChannel').value || 'release';
+                const selectedExtensionId = button.dataset.installExtension || '';
+                const selectedFile = button.dataset.installFile || '';
+                await installExtension(channel, selectedExtensionId, selectedFile, button);
+            });
+        });
+    }
+
+    function showInstallMessage(message, isError) {
+        const banner = document.getElementById('extensionsInstallMessage');
+        banner.textContent = message || '';
+        banner.style.display = message ? 'block' : 'none';
+        if (isError) {
+            banner.style.borderColor = 'rgba(231, 76, 60, 0.45)';
+            banner.style.background = 'rgba(231, 76, 60, 0.16)';
+            banner.style.color = '#ffc7c1';
+            return;
+        }
+        banner.style.borderColor = 'rgba(81, 125, 255, 0.45)';
+        banner.style.background = 'rgba(81, 125, 255, 0.16)';
+        banner.style.color = '#bfd1ff';
+    }
+
+    async function installExtension(channel, extensionId, fileName, button) {
+        if (!extensionId || !fileName) {
+            showInstallMessage('Invalid extension selection.', true);
+            return;
+        }
+
+        const previousText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Installing...';
+        showInstallMessage('', false);
+
+        try {
+            const response = await api('/api/extensions/install', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel, extensionId, fileName })
+            });
+            const text = response.message || 'Downloaded extension. Restart required.';
+            showInstallMessage(text, false);
+            await loadExtensionStatus();
+        } catch (error) {
+            showInstallMessage(error.message || 'Could not install extension.', true);
+            button.disabled = false;
+            button.textContent = previousText;
+        }
+    }
+
+    async function reloadExtensions(button) {
+        const previousText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Reloading...';
+        showInstallMessage('', false);
+
+        try {
+            const payload = await api('/api/extensions/reload', { method: 'POST' });
+            const warningText = Array.isArray(payload.warnings) && payload.warnings.length > 0
+                ? ` Warnings: ${payload.warnings.join(', ')}`
+                : '';
+            showInstallMessage((payload.message || 'Extensions reloaded.') + warningText, false);
+            await loadExtensionStatus();
+        } catch (error) {
+            showInstallMessage(error.message || 'Could not reload extensions.', true);
+        } finally {
+            button.disabled = false;
+            button.textContent = previousText;
+        }
+    }
+
+    async function loadExtensionStatus() {
+        const channel = document.getElementById('releaseChannel').value || 'release';
+        const status = await api(`/api/extensions/status?channel=${encodeURIComponent(channel)}`);
+        if (status.channel) {
+            document.getElementById('releaseChannel').value = status.channel;
+        }
+
+        const warning = document.getElementById('extensionsWarning');
+        if (status.availableExtensionsWarning) {
+            warning.textContent = status.availableExtensionsWarning;
+            warning.style.display = 'block';
+        } else {
+            warning.textContent = '';
+            warning.style.display = 'none';
+        }
+
+        document.getElementById('installedCount').textContent = String(status.installedCount || 0);
+        document.getElementById('availableExtensionCount').textContent = String(status.availableExtensionCount || 0);
+        renderInstalled(status.installed);
+        renderAvailableExtensions(status.availableExtensions);
+    }
+
+    document.getElementById('releaseChannel').addEventListener('change', async () => {
+        await loadExtensionStatus();
+    });
+
+    document.getElementById('refresh').addEventListener('click', async () => {
+        showInstallMessage('', false);
+        await loadExtensionStatus();
+    });
+
+    document.getElementById('reloadExtensions').addEventListener('click', async () => {
+        const button = document.getElementById('reloadExtensions');
+        await reloadExtensions(button);
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        await api('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+
+    (async () => {
+        try {
+            initSidebarCategories();
+            await loadMe();
+            await loadExtensionStatus();
+        } catch {
+            window.location.href = '/';
+        }
+    })();
+</script>
+</body>
+</html>
+

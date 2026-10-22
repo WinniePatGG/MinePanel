@@ -268,7 +268,6 @@ public final class UserRepository {
                     try {
                         permissions.add(PanelPermission.valueOf(rawPermission));
                     } catch (IllegalArgumentException ignored) {
-                        // Ignore unknown permissions from older/newer versions.
                     }
                 }
             }

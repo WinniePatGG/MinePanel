@@ -160,7 +160,6 @@ public final class AirstrikeExtension implements MinePanelExtension {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         Location targetLocation = target.getLocation();
         Vector velocity = target.getVelocity();
-        // Lead the strike slightly so waves keep up with sprinting players.
         double leadFactor = 6.0;
         double predictedX = targetLocation.getX() + (velocity.getX() * leadFactor);
         double predictedZ = targetLocation.getZ() + (velocity.getZ() * leadFactor);
@@ -191,7 +190,6 @@ public final class AirstrikeExtension implements MinePanelExtension {
                     return new TargetSnapshot(online.getUniqueId(), online.getName());
                 }
             } catch (IllegalArgumentException ignored) {
-                // Try username fallback.
             }
         }
 

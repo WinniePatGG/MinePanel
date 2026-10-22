@@ -125,7 +125,6 @@ public final class Database {
             try {
                 statement.execute("ALTER TABLE discord_webhook_config ADD COLUMN log_security INTEGER NOT NULL DEFAULT 1");
             } catch (SQLException ignored) {
-                // Column already exists on upgraded installs.
             }
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not initialize database", exception);

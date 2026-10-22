@@ -129,7 +129,6 @@ public final class PlayerStatsExtension implements MinePanelExtension {
                 return number.doubleValue();
             }
         } catch (Exception ignored) {
-            // Fallback below.
         }
 
         try {
@@ -143,7 +142,6 @@ public final class PlayerStatsExtension implements MinePanelExtension {
                 return number.doubleValue();
             }
         } catch (Exception ignored) {
-            // No compatible method available.
         }
 
         return null;
@@ -157,7 +155,6 @@ public final class PlayerStatsExtension implements MinePanelExtension {
                 return String.valueOf(formatted);
             }
         } catch (Exception ignored) {
-            // Fallback below.
         }
 
         return String.format(Locale.US, "%.2f", value);

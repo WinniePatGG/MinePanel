@@ -28,6 +28,9 @@ public final class ServerSchedulerBridge {
     public ServerSchedulerBridge(JavaPlugin plugin) {
         this.plugin = plugin;
 
+        VersionUtil versionUtil = VersionUtil.getInstance();
+        boolean potentialFolia = versionUtil.isFolia() && versionUtil.supportsGlobalRegionScheduler();
+
         Object resolvedGlobalScheduler = null;
         Method resolvedGlobalRun = null;
         Method resolvedGlobalRunDelayed = null;
@@ -36,16 +39,17 @@ public final class ServerSchedulerBridge {
         Object resolvedAsyncScheduler = null;
         Method resolvedAsyncRunNow = null;
 
-        try {
-            resolvedGlobalScheduler = plugin.getServer().getClass().getMethod("getGlobalRegionScheduler").invoke(plugin.getServer());
-            resolvedGlobalRun = resolvedGlobalScheduler.getClass().getMethod("run", Plugin.class, Consumer.class);
-            resolvedGlobalRunDelayed = resolvedGlobalScheduler.getClass().getMethod("runDelayed", Plugin.class, Consumer.class, long.class);
-            resolvedGlobalRunAtFixedRate = resolvedGlobalScheduler.getClass().getMethod("runAtFixedRate", Plugin.class, Consumer.class, long.class, long.class);
+        if (potentialFolia) {
+            try {
+                resolvedGlobalScheduler = plugin.getServer().getClass().getMethod("getGlobalRegionScheduler").invoke(plugin.getServer());
+                resolvedGlobalRun = resolvedGlobalScheduler.getClass().getMethod("run", Plugin.class, Consumer.class);
+                resolvedGlobalRunDelayed = resolvedGlobalScheduler.getClass().getMethod("runDelayed", Plugin.class, Consumer.class, long.class);
+                resolvedGlobalRunAtFixedRate = resolvedGlobalScheduler.getClass().getMethod("runAtFixedRate", Plugin.class, Consumer.class, long.class, long.class);
 
-            resolvedAsyncScheduler = plugin.getServer().getClass().getMethod("getAsyncScheduler").invoke(plugin.getServer());
-            resolvedAsyncRunNow = resolvedAsyncScheduler.getClass().getMethod("runNow", Plugin.class, Consumer.class);
-        } catch (ReflectiveOperationException ignored) {
-            // Paper/Spigot fallback uses BukkitScheduler APIs.
+                resolvedAsyncScheduler = plugin.getServer().getClass().getMethod("getAsyncScheduler").invoke(plugin.getServer());
+                resolvedAsyncRunNow = resolvedAsyncScheduler.getClass().getMethod("runNow", Plugin.class, Consumer.class);
+            } catch (ReflectiveOperationException ignored) {
+            }
         }
 
         this.globalRegionScheduler = resolvedGlobalScheduler;
@@ -115,7 +119,6 @@ public final class ServerSchedulerBridge {
         }
 
         FoliaRepeatingState repeatingState = new FoliaRepeatingState();
-        // Do not block startup waiting for first tick; on Folia this can deadlock when called during enable.
         repeatingState.scheduleNext(safeInitialDelay);
 
         return () -> {
@@ -172,7 +175,6 @@ public final class ServerSchedulerBridge {
             Method cancelMethod = task.getClass().getMethod("cancel");
             cancelMethod.invoke(task);
         } catch (ReflectiveOperationException ignored) {
-            // Best-effort cancellation.
         }
     }
 

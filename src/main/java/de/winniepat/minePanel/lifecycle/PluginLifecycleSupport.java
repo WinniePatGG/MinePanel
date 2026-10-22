@@ -3,7 +3,9 @@ package de.winniepat.minePanel.lifecycle;
 import de.winniepat.minePanel.MinePanel;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
+import de.winniepat.minePanel.util.VersionUtil;
 import de.winniepat.minePanel.web.BootstrapService;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.*;
@@ -48,20 +50,47 @@ public final class PluginLifecycleSupport {
     }
 
     public static void announceMinePanelBanner(JavaPlugin plugin, ComponentLogger componentLogger, MiniMessage miniMessage) {
+        VersionUtil versionUtil = VersionUtil.getInstance();
         plugin.getLogger().info("");
-        componentLogger.info(miniMessage.deserialize("<gold> __  __  ____  </gold>"));
-        componentLogger.info(miniMessage.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
-        componentLogger.info("{}{}", miniMessage.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), miniMessage.deserialize("<green>" + plugin.getDescription().getVersion() + "</green>"));
-        componentLogger.info("{}{}", miniMessage.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), miniMessage.deserialize("<aqua>" + plugin.getServer().getName() + "</aqua>" + "(" + plugin.getServer().getMinecraftVersion() + ")"));
-        componentLogger.info(miniMessage.deserialize("<gold>|_|  |_| |_|      </gold>"));
+        log(componentLogger, plugin, miniMessage.deserialize("<gold> __  __  ____  </gold>"));
+        log(componentLogger, plugin, miniMessage.deserialize("<gold>|  \\/  | |  _ \\ </gold>"));
+        log(componentLogger, plugin, miniMessage.deserialize("<gold>| |\\/| | | |_) |  MinePanel: </gold>"), miniMessage.deserialize("<green>" + plugin.getDescription().getVersion() + "</green>"));
+        log(componentLogger, plugin, miniMessage.deserialize("<gold>| |  | | |  __/   Running on: </gold>"), miniMessage.deserialize("<aqua>" + versionUtil.getVersionString() + "</aqua>"));
+        log(componentLogger, plugin, miniMessage.deserialize("<gold>|_|  |_| |_|      </gold>"));
         plugin.getLogger().info("");
     }
 
     public static void announceBootstrapToken(BootstrapService bootstrapService, ComponentLogger componentLogger, MiniMessage miniMessage) {
         bootstrapService.getBootstrapToken().ifPresent(token -> {
-            componentLogger.info("{}{}", miniMessage.deserialize("<dark_green>First launch setup token: </dark_green>"), token);
-            componentLogger.info("");
+            log(componentLogger, bootstrapService, miniMessage.deserialize("<dark_green>First launch setup token: </dark_green>"), miniMessage.deserialize(token));
+            log(componentLogger, bootstrapService, Component.empty());
         });
+    }
+
+    private static void log(ComponentLogger componentLogger, JavaPlugin plugin, Component... components) {
+        if (componentLogger != null) {
+            for (Component component : components) {
+                componentLogger.info(component);
+            }
+        } else {
+            for (Component component : components) {
+                plugin.getLogger().info(component.toString());
+            }
+        }
+    }
+
+    private static void log(ComponentLogger componentLogger, BootstrapService service, Component... components) {
+        if (componentLogger != null) {
+            for (Component component : components) {
+                componentLogger.info(component);
+            }
+        }
+    }
+
+    private static void log(ComponentLogger componentLogger, BootstrapService service, String message) {
+        if (componentLogger != null) {
+            componentLogger.info(message);
+        }
     }
 
     public static void registerPluginListeners(

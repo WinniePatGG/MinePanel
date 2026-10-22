@@ -1,7 +1,6 @@
 package de.winniepat.minePanel.users;
 
 public enum PanelPermission {
-    // Legacy keys kept for compatibility with older route guards.
     VIEW_DASHBOARD("Legacy", "View Dashboard", null, false),
     VIEW_LOGS("Legacy", "View Logs", null, false),
 

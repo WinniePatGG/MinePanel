@@ -24,7 +24,6 @@ public record PanelUser(
                         return true;
                     }
                 } catch (IllegalArgumentException ignored) {
-                    // ignored
                 }
             }
         }

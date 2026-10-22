@@ -9,6 +9,7 @@ import de.winniepat.minePanel.integrations.*;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
 import de.winniepat.minePanel.util.ServerSchedulerBridge;
+import de.winniepat.minePanel.util.VersionUtil;
 import org.bukkit.BanEntry;
 import de.winniepat.minePanel.users.*;
 import org.bukkit.BanList;
@@ -356,7 +357,6 @@ public final class WebPanelServer {
             overviewSamplerTask.cancel();
         }
 
-        // Capture one sample immediately, then continue in a fixed cadence.
         synchronized (overviewSamples) {
             captureOverviewSample();
         }
@@ -399,13 +399,17 @@ public final class WebPanelServer {
     }
 
     private double readPrimaryTps() {
+        VersionUtil versionUtil = VersionUtil.getInstance();
+        if (!versionUtil.supportsTPS()) {
+            return -1.0;
+        }
+
         try {
             Object result = plugin.getServer().getClass().getMethod("getTPS").invoke(plugin.getServer());
             if (result instanceof double[] values && values.length > 0) {
                 return values[0];
             }
         } catch (Exception ignored) {
-            // On unsupported server implementations, TPS remains unavailable.
         }
         return -1.0;
     }
@@ -441,7 +445,6 @@ public final class WebPanelServer {
                 }
             }
         } catch (Exception ignored) {
-            // Optional JVM metric; treat as unavailable.
         }
         return 0L;
     }
@@ -2370,7 +2373,6 @@ public final class WebPanelServer {
             try {
                 parsed.add(PanelPermission.valueOf(raw.trim().toUpperCase(Locale.ROOT)));
             } catch (IllegalArgumentException ignored) {
-                // Ignore unknown permission ids from stale clients.
             }
         }
         return parsed;
@@ -2722,7 +2724,6 @@ public final class WebPanelServer {
                 return element.getAsJsonObject();
             }
         } catch (Exception ignored) {
-            // Ignore malformed persisted settings and return empty defaults.
         }
         return new JsonObject();
     }
@@ -3055,7 +3056,6 @@ public final class WebPanelServer {
                         errorMessage = body.get("message").getAsString();
                     }
                 } catch (Exception ignored) {
-                    // Keep fallback status text.
                 }
 
                 if (response.statusCode() == 403 && cachedGitHubReleases != null && !cachedGitHubReleases.isEmpty()) {
@@ -3244,7 +3244,6 @@ public final class WebPanelServer {
         }
 
         if (installed.kind() != latest.kind()) {
-            // Semantic versions are considered newer than alpha track.
             if (installed.kind() == VersionKind.SEMVER && latest.kind() == VersionKind.ALPHA) {
                 return 1;
             }

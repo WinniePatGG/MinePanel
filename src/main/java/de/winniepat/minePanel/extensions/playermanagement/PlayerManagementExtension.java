@@ -177,7 +177,6 @@ public final class PlayerManagementExtension implements MinePanelExtension, Exte
                     return known;
                 }
             } catch (IllegalArgumentException ignored) {
-                // Fallback to username lookup.
             }
         }
 

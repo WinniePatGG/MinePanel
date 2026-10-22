@@ -128,7 +128,6 @@ public final class WebAssetService {
             try {
                 newest = Math.max(newest, Files.getLastModifiedTime(target).toMillis());
             } catch (IOException ignored) {
-                // Ignore broken files so the rest of the panel can continue serving assets.
             }
         }
         cachedVersion = newest;

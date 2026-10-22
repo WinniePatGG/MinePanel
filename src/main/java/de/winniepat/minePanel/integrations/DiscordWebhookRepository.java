@@ -47,7 +47,7 @@ public final class DiscordWebhookRepository {
     }
 
     public void save(DiscordWebhookConfig config) {
-        String sql = "INSERT INTO discord_webhook_config(" 
+        String sql = "INSERT INTO discord_webhook_config("
                 + "id, enabled, webhook_url, use_embed, bot_name, message_template, embed_title_template, "
                 + "log_chat, log_commands, log_auth, log_audit, log_security, log_console_response, log_system"
                 + ") VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "

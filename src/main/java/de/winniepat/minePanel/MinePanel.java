@@ -8,11 +8,13 @@ import de.winniepat.minePanel.lifecycle.PluginLifecycleSupport;
 import de.winniepat.minePanel.logs.*;
 import de.winniepat.minePanel.persistence.*;
 import de.winniepat.minePanel.util.ServerSchedulerBridge;
+import de.winniepat.minePanel.util.VersionUtil;
 import de.winniepat.minePanel.web.*;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.time.Instant;
 
@@ -31,8 +33,23 @@ public final class MinePanel extends JavaPlugin {
     private ExtensionSettingsRepository extensionSettingsRepository;
     private ServerSchedulerBridge schedulerBridge;
 
-    MiniMessage mm = MiniMessage.miniMessage();
-    ComponentLogger componentLogger = this.getComponentLogger();
+    private MiniMessage mm;
+    private ComponentLogger componentLogger;
+
+    @Override
+    public void onLoad() {
+        this.mm = MiniMessage.miniMessage();
+        this.componentLogger = initComponentLogger();
+    }
+
+    private ComponentLogger initComponentLogger() {
+        try {
+            Method method = JavaPlugin.class.getMethod("getComponentLogger");
+            return (ComponentLogger) method.invoke(this);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
 
     private record StartupContext(
             UserRepository userRepository,
@@ -71,8 +88,16 @@ public final class MinePanel extends JavaPlugin {
         PluginLifecycleSupport.synchronizeKnownPlayers(getServer(), startupContext.knownPlayerRepository(), playerActivityRepository);
         startWebPanel(panelConfig, startupContext);
 
-        componentLogger.info("{}{}:{}", mm.deserialize("<aqua>MinePanel available at: </aqua>"), "http://" +  panelConfig.host(), panelConfig.port());
+        logInfo(componentLogger, mm, "{}{}:{}", mm.deserialize("<aqua>MinePanel available at: </aqua>"), "http://" +  panelConfig.host(), panelConfig.port());
         panelLogger.log("SYSTEM", "PLUGIN", "MinePanel plugin started");
+    }
+
+    private void logInfo(ComponentLogger logger, MiniMessage mm, String message, Object... args) {
+        if (logger != null) {
+            logger.info(mm.deserialize(message), args);
+        } else {
+            getLogger().info(mm.deserialize(message).toString());
+        }
     }
 
     private StartupContext initializeStartupContext(WebPanelConfig panelConfig) {

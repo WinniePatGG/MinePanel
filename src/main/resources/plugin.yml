@@ -1,10 +1,10 @@
 name: MinePanel
 version: '${version}'
 main: de.winniepat.minePanel.MinePanel
-api-version: '1.21'
+api-version: '1.16'
 authors: [ WinniePatGG ]
 website: https://winniepat.de
-description: MinePanel with secure auth, user roles, and log history.
+description: MinePanel with secure auth, user roles, and log history. Supports Minecraft 1.16.3 through 26.2.
 folia-supported: true
 
 

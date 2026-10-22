@@ -1,6 +1,7 @@
 package de.winniepat.minePanel.extensions.announcements;
 
 import de.winniepat.minePanel.extensions.ExtensionContext;
+import de.winniepat.minePanel.util.VersionUtil;
 import org.bukkit.entity.Player;
 
 import java.time.Instant;
@@ -166,13 +167,17 @@ public final class AnnouncementService {
     }
 
     private double readPrimaryTps() {
+        VersionUtil versionUtil = VersionUtil.getInstance();
+        if (!versionUtil.supportsTPS()) {
+            return -1.0;
+        }
+
         try {
             Object result = context.plugin().getServer().getClass().getMethod("getTPS").invoke(context.plugin().getServer());
             if (result instanceof double[] values && values.length > 0) {
                 return values[0];
             }
         } catch (Exception ignored) {
-            // Keep placeholder available on implementations without Paper TPS API.
         }
         return -1.0;
     }

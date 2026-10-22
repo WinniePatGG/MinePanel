@@ -240,7 +240,6 @@ public final class ExtensionManager {
             try {
                 classLoader.close();
             } catch (IOException ignored) {
-                // Best effort cleanup.
             }
         }
         classLoaders.clear();
@@ -285,7 +284,6 @@ public final class ExtensionManager {
                 try {
                     classLoader.close();
                 } catch (IOException ignored) {
-                    // Best effort cleanup.
                 }
             }
         }

@@ -76,7 +76,6 @@ public final class WorldBackupService {
                 try {
                     Files.deleteIfExists(tempZip);
                 } catch (IOException ignored) {
-                    // Best effort cleanup.
                 }
             }
         }
@@ -269,7 +268,6 @@ public final class WorldBackupService {
                             zipStream.putNextEntry(new ZipEntry(entryName));
                             zipStream.closeEntry();
                         } catch (IOException ignored) {
-                            // Ignore duplicate/invalid directory entries and continue.
                         }
                     }
                     return FileVisitResult.CONTINUE;
@@ -296,14 +294,12 @@ public final class WorldBackupService {
                         Files.copy(file, zipStream);
                         zipStream.closeEntry();
                     } catch (IOException ignored) {
-                        // Skip files that are temporarily locked by the OS or server process.
                     }
                     return FileVisitResult.CONTINUE;
                 }
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    // Continue if a file cannot be read due to locks/permissions.
                     return FileVisitResult.CONTINUE;
                 }
             });

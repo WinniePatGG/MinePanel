@@ -1,6 +1,7 @@
 package de.winniepat.minePanel.extensions;
 
 import de.winniepat.minePanel.MinePanel;
+import de.winniepat.minePanel.util.VersionUtil;
 import org.bukkit.command.*;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.command.PluginIdentifiableCommand;
@@ -127,12 +128,16 @@ public final class BukkitExtensionCommandRegistry implements ExtensionCommandReg
                 return (Map<String, Command>) map;
             }
         } catch (Exception ignored) {
-            // Best effort cleanup.
         }
         return Collections.emptyMap();
     }
 
     private CommandMap getCommandMap() {
+        VersionUtil versionUtil = VersionUtil.getInstance();
+        if (!versionUtil.isAtLeastMinor(16)) {
+            return null;
+        }
+
         try {
             Method getCommandMapMethod = plugin.getServer().getClass().getMethod("getCommandMap");
             Object value = getCommandMapMethod.invoke(plugin.getServer());
@@ -140,7 +145,6 @@ public final class BukkitExtensionCommandRegistry implements ExtensionCommandReg
                 return map;
             }
         } catch (Exception ignored) {
-            // Supported on CraftServer-based implementations.
         }
         return null;
     }

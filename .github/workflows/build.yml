@@ -1,0 +1,101 @@
+name: Build and release MinePanel
+
+# Builds on every push to main (stable release) and staging (prerelease).
+# Other branches and pull requests do not trigger anything, and staging
+# never produces a release on the stable channel.
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    name: Build jars and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      # 'assemble' builds the main plugin jar (shadowJar) plus all 10 extension jars.
+      # Plain 'build' is intentionally not used here: it is finalized by the 'copyPlugin'
+      # task, which copies jars to a local disk path and would fail on the CI runner.
+      - name: Build plugin and extension jars
+        run: ./gradlew --no-daemon -PbuildNumber=${{ github.run_number }} assemble
+
+      - name: Read version from built jar
+        id: version
+        run: |
+          MAIN_JAR="$(find build/libs -maxdepth 1 -name 'MinePanel-*.jar' ! -name '*-plain.jar' -print -quit)"
+          if [ -z "$MAIN_JAR" ]; then
+            echo "::error::Main plugin jar was not built"
+            exit 1
+          fi
+          VERSION="$(basename "$MAIN_JAR" .jar)"
+          VERSION="${VERSION#MinePanel-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Built version: $VERSION"
+
+      # Fails the run before anything is published if the jars would not
+      # install/load correctly in the plugin.
+      - name: Verify built artifacts
+        run: bash .github/scripts/verify-artifacts.sh "${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          MAIN_JAR="build/libs/MinePanel-${VERSION}.jar"
+          if [ ! -f "$MAIN_JAR" ]; then
+            echo "::error::$MAIN_JAR not found"
+            exit 1
+          fi
+          TAG="$VERSION"
+          FILES=( "$MAIN_JAR" build/libs/extensions/*.jar )
+
+          echo "Publishing release $TAG (push to $GITHUB_REF_NAME)"
+          echo "Assets:"
+          ls -la "${FILES[@]}"
+
+          # Re-runs of a workflow run reuse the same run number, so refresh an
+          # existing release for this tag instead of failing.
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            # push to main -> stable release (the panel's default channel)
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "MinePanel $TAG" \
+              --generate-notes \
+              "${FILES[@]}"
+          else
+            # push to staging -> prerelease (only visible on the panel's prerelease channel)
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title "MinePanel $TAG (prerelease)" \
+              --generate-notes \
+              "${FILES[@]}"
+          fi
+
+          gh release view "$TAG" --json assets --jq '.assets[].name'

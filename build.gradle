@@ -5,7 +5,11 @@ plugins {
 }
 
 group = 'de.winniepat'
-version = 'beta-1'
+
+// CI builds pass -PbuildNumber=<run number> so every push gets a unique, comparable
+// version (e.g. beta-1.123). Local builds keep the plain 'beta-1' version.
+def ciBuildNumber = project.findProperty('buildNumber')
+version = (ciBuildNumber == null ? 'beta-1' : "beta-1.${ciBuildNumber}".toString())
 
 base {
     archivesName = 'MinePanel'
